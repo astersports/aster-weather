@@ -1,0 +1,8 @@
+node_modules
+*.tsbuildinfo
+.DS_Store
+coverage
+
+# NOTE: dist/ is intentionally COMMITTED. @aster/weather is consumed as a git
+# dependency (github:astersports/aster-weather#v0.1.0) with no install-time
+# build step, so the built output must be in the tree. Do not gitignore dist/.
