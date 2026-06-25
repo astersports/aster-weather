@@ -21,12 +21,16 @@ export function weatherLocationFrom(events, locations) {
             continue;
         const loc = locations[ev.location_id];
         if (loc && loc.lat != null && loc.lon != null) {
+            // Narrow to non-null so the WeatherAnchor (`lat: number`) is honest —
+            // the guard above already proved both are present at runtime.
+            const lat = loc.lat;
+            const lon = loc.lon;
             const parts = loc.address
                 ? String(loc.address).split(",").map((s) => s.trim())
                 : [];
             return {
-                lat: loc.lat,
-                lon: loc.lon,
+                lat,
+                lon,
                 city: parts.length >= 2 ? parts[1] : parts[0] || loc.name || null,
             };
         }
