@@ -1,0 +1,45 @@
+/**
+ * Org-agnostic coordinate resolution. Merged from aster-sports
+ * `weatherLocationFrom` + `coordsForEvent` — the seam that closes the
+ * hardcoded-Westchester default (AP #7): the source is real event locations,
+ * with an explicit org-default fallback rather than a constant baked into the
+ * engine (St. Patrick baked ARMONK_LAT/LON straight into every call).
+ *
+ * Pure. No app constants.
+ */
+/**
+ * Pick the forecast anchor: the first event (already sorted by the caller)
+ * whose location carries lat/lon. Returns `{ lat, lon, city }` or null.
+ * City = the address segment after the first comma (same heuristic as the
+ * venue-list city), falling back to the first segment or the venue name.
+ */
+export function weatherLocationFrom(events, locations) {
+    if (!events || !locations)
+        return null;
+    for (const ev of events) {
+        if (ev.location_id == null)
+            continue;
+        const loc = locations[ev.location_id];
+        if (loc && loc.lat != null && loc.lon != null) {
+            const parts = loc.address
+                ? String(loc.address).split(",").map((s) => s.trim())
+                : [];
+            return {
+                lat: loc.lat,
+                lon: loc.lon,
+                city: parts.length >= 2 ? parts[1] : parts[0] || loc.name || null,
+            };
+        }
+    }
+    return null;
+}
+/**
+ * Resolve the weather-anchor coords for a set of events. Returns the first
+ * event-location carrying lat/lon, else `orgDefault`. Returns a `[lat, lon]`
+ * tuple to spread straight into a `useWeather(lat, lon)`-style hook.
+ */
+export function coordsForEvent(events, locations, orgDefault) {
+    const anchor = weatherLocationFrom(events || [], locations || {});
+    return anchor ? [anchor.lat, anchor.lon] : orgDefault;
+}
+//# sourceMappingURL=coordsForEvent.js.map
