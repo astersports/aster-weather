@@ -37,15 +37,31 @@ export function isValidCoord(lat, lon) {
 }
 /**
  * Fetch with an abort timeout. Uses the injected `fetchImpl` when provided
- * (SSRF boundary / test stub); otherwise the global `fetch` with an
- * AbortController. From St. Patrick `fetchWithTimeout`, generalized to accept
- * an injected implementation.
+ * (SSRF boundary / test stub); otherwise the global `fetch`. From St. Patrick
+ * `fetchWithTimeout`, generalized to accept an injected implementation.
+ *
+ * The timeout is enforced on BOTH paths: the injected `fetchImpl` is raced
+ * against the same `timeoutMs` so a slow/hung consumer fetch can't stall a
+ * forecast call indefinitely. The injected impl's signature
+ * (`(url) => Promise<...>`) takes no AbortSignal, so we can't abort its
+ * in-flight request — but the race ensures the caller's promise still rejects
+ * with a timeout, matching the global-fetch path's behavior.
  */
 export async function fetchWithTimeout(url, opts = {}) {
     const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
     if (opts.fetchImpl) {
-        // Injected impl owns its own timeout/SSRF semantics.
-        return opts.fetchImpl(url);
+        // Injected impl owns SSRF semantics; we still enforce the timeout by
+        // racing it (its signature carries no AbortSignal to cancel with).
+        let timeoutId;
+        const timeout = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error(`fetch timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+        try {
+            return await Promise.race([opts.fetchImpl(url), timeout]);
+        }
+        finally {
+            clearTimeout(timeoutId);
+        }
     }
     const globalFetch = typeof fetch !== "undefined" ? fetch : undefined;
     if (!globalFetch) {

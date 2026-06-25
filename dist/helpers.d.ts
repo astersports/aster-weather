@@ -21,9 +21,15 @@ interface MinimalResponse {
 }
 /**
  * Fetch with an abort timeout. Uses the injected `fetchImpl` when provided
- * (SSRF boundary / test stub); otherwise the global `fetch` with an
- * AbortController. From St. Patrick `fetchWithTimeout`, generalized to accept
- * an injected implementation.
+ * (SSRF boundary / test stub); otherwise the global `fetch`. From St. Patrick
+ * `fetchWithTimeout`, generalized to accept an injected implementation.
+ *
+ * The timeout is enforced on BOTH paths: the injected `fetchImpl` is raced
+ * against the same `timeoutMs` so a slow/hung consumer fetch can't stall a
+ * forecast call indefinitely. The injected impl's signature
+ * (`(url) => Promise<...>`) takes no AbortSignal, so we can't abort its
+ * in-flight request — but the race ensures the caller's promise still rejects
+ * with a timeout, matching the global-fetch path's behavior.
  */
 export declare function fetchWithTimeout(url: string, opts?: FetchOptions): Promise<MinimalResponse>;
 export {};
