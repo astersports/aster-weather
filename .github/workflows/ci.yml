@@ -29,3 +29,40 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+  # Supply-chain faucet gate — mirrors astersports/aster-sports (Phase 0.0 /
+  # PLAN_ON_TRUTH). Dependency changes that are a major-version bump (or touch a
+  # money/child/auth-adjacent package, none present here today) must NOT auto-
+  # merge on green — they require a human owner, who releases the PR with the
+  # `dep-review-approved` label. Minor/patch bumps to non-sensitive deps pass
+  # and stay auto-mergeable. Gate by what the dependency TOUCHES, not the
+  # version-jump size. This repo is the shared package every other consumes, so
+  # a surprise major here ripples cross-repo — hence the gate. PR-only.
+  # NOTE (owner): to BLOCK merge, mark this a REQUIRED status check in branch
+  # protection — the job alone only reports.
+  dependency-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Resolve base + head package.json
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git show "$BASE_SHA:package.json" > /tmp/base-package.json 2>/dev/null || echo '{}' > /tmp/base-package.json
+          cp package.json /tmp/head-package.json
+      - name: Gate major / money-child-auth dependency changes
+        env:
+          BASE_PKG: /tmp/base-package.json
+          HEAD_PKG: /tmp/head-package.json
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: node scripts/dependency-gate.mjs
