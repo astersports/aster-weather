@@ -1,0 +1,8 @@
+# Guard the guard (Phase 0.0 / PLAN_ON_TRUTH, work order P1-B).
+# The supply-chain faucet gate must not be edited away on green: changes to CI
+# workflows or to the dependency-gate classifier (which holds the SENSITIVE list)
+# require an owner review. Owner activates this by enabling "Require review from
+# Code Owners" on the protected `main` branch. Swap @franksamaritano for an org
+# team (e.g. @astersports/maintainers) if/when one exists.
+/.github/**                    @franksamaritano
+/scripts/dependency-gate.mjs   @franksamaritano
