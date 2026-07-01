@@ -1,0 +1,73 @@
+# Label integrity for the supply-chain faucet gate (Phase 0.0 / PLAN_ON_TRUTH, P1-C).
+# The `dependency-gate` job releases a gated PR when the `dep-review-approved`
+# label is present. That human sign-off has to be trustworthy, so:
+#   (a) applier: if a NON-owner applies the label, remove it and fail — only an
+#       owner's application sticks (GitHub has no native per-label permission).
+#   (b) TOCTOU: on any NEW commit (synchronize), drop the label — approval must
+#       re-bind to the current tree, not persist across a later sensitive push.
+# Uses pull_request_target (base-repo token, needed to write labels) but never
+# checks out PR code, so untrusted head code never runs with that token.
+name: dep-review label integrity
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+concurrency:
+  group: dep-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  guard-label:
+    # Only act on the label we care about, or on a new commit.
+    if: github.event.action == 'synchronize' || github.event.label.name == 'dep-review-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enforce dep-review-approved integrity
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const LABEL = 'dep-review-approved';
+            // Owner allowlist — expand as needed (or swap for a team check).
+            const OWNERS = ['franksamaritano'];
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const num = pr.number;
+
+            const isOwner = async (login) => {
+              if (!login) return false;
+              if (OWNERS.includes(login)) return true;
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel(
+                  { owner, repo, username: login });
+                return data.permission === 'admin' || data.permission === 'maintain';
+              } catch { return false; }
+            };
+            const dropLabel = () => github.rest.issues.removeLabel(
+              { owner, repo, issue_number: num, name: LABEL }).catch(() => {});
+
+            if (context.payload.action === 'labeled') {
+              if (context.payload.label.name !== LABEL) return;
+              const who = context.payload.sender.login;
+              if (await isOwner(who)) {
+                core.info(`Owner ${who} applied '${LABEL}' — approval stands.`);
+                return;
+              }
+              await dropLabel();
+              core.setFailed(`${who} is not an owner — '${LABEL}' removed. Only an owner may release a dependency-gated PR.`);
+              return;
+            }
+
+            // synchronize: a new commit was pushed — invalidate a prior approval.
+            const present = (pr.labels || []).some((l) => l.name === LABEL);
+            if (present) {
+              await dropLabel();
+              core.info(`New commit pushed — '${LABEL}' removed; re-approval required for the new tree.`);
+            } else {
+              core.info('New commit pushed — label not present, nothing to do.');
+            }
