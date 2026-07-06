@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Enforce dep-review-approved integrity
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const LABEL = 'dep-review-approved';
