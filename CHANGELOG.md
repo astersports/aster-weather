@@ -7,6 +7,40 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.3.0 — 2026-07-16
+
+L99 audit Wave 2 — the icon "superior visual experience" pass. **Additive /
+non-breaking** over 0.2.0 (no shape changes; new optional props + one new icon).
+
+### Added
+- **Subtle motion** on the SVG icons — sun-ray rotation, falling rain/drizzle/
+  snow, cloud drift, thunderstorm-bolt flash — all **gated behind
+  `prefers-reduced-motion`** and SSR-safe (reduced-motion users, servers, and
+  tests get the static art with zero animation nodes) (WX-P2-9).
+- **Accessibility props** on every icon + the dispatcher: `label?` +
+  `decorative?` (default decorative → `aria-hidden`). `decorative={false}`
+  exposes `role="img"` + `aria-label` + `<title>`; the dispatcher defaults the
+  label from the WMO description (WX-P2-8).
+- **Night variants** for overcast/fog/drizzle/rain/heavy-rain/snow/thunderstorm
+  via a shared darker night cloud palette (was day-only) (WX-P2-11).
+- **`FreezingRainIcon`** + `"freezing-rain"` icon key; WMO 56/57/66/67 now route
+  to it instead of collapsing into plain rain (WX-P2-10).
+- `usePrefersReducedMotion` hook + `IconProps` type + `ROUTED_ICON_KEYS`
+  exported for consumers.
+
+### Fixed
+- **Per-instance gradient IDs** via `useId()` — repeating an icon on a page no
+  longer emits duplicate DOM ids (WX-P3-9).
+- Neutral (overcast) fallback for an unknown icon key, not a misleading Sunny
+  (WX-P3-10); `DropletIcon` default size normalized to `w-4 h-4`, `WindIcon`
+  given the shared gradient treatment (WX-P3-12); fog/overcast contrast raised
+  for light backgrounds (WX-P2-12).
+
+### Tests
+- happy-dom render env; every WMO icon key rendered day+night, WMO↔dispatcher
+  parity invariant (WX-P2-22), gradient-id uniqueness, and a11y attributes
+  (WX-P2-19). 59 passing.
+
 ## 0.2.0 — 2026-07-16
 
 The L99 audit pass (`docs/WEATHER_L99_AUDIT_2026-07-16.md`). Realtime signal

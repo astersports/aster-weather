@@ -47,7 +47,7 @@ export declare const SEVERE_GUST_MPH = 45;
  * rename into a compile error at the consumer instead of a silent
  * fall-through to the default icon (WX-P2-15).
  */
-export type WeatherIconKey = "clear" | "mostly-clear" | "partly-cloudy" | "overcast" | "fog" | "drizzle" | "light-rain" | "rain" | "heavy-rain" | "light-snow" | "snow" | "heavy-snow" | "thunderstorm";
+export type WeatherIconKey = "clear" | "mostly-clear" | "partly-cloudy" | "overcast" | "fog" | "drizzle" | "light-rain" | "rain" | "freezing-rain" | "heavy-rain" | "light-snow" | "snow" | "heavy-snow" | "thunderstorm";
 /** A weather anchor coordinate. */
 export interface Coords {
     lat: number;

@@ -18,11 +18,13 @@ export {
 } from "./DayIcons.js";
 export {
   HeavyRainIcon,
+  FreezingRainIcon,
   SnowIcon,
   ThunderstormIcon,
-  WindIcon,
   ClearNightIcon,
   PartlyCloudyNightIcon,
-  DropletIcon,
 } from "./NightAndSevereIcons.js";
-export { ColorfulWeatherIcon } from "./ColorfulWeatherIcon.js";
+export { WindIcon, DropletIcon } from "./UtilityIcons.js";
+export { ColorfulWeatherIcon, ROUTED_ICON_KEYS } from "./ColorfulWeatherIcon.js";
+export { usePrefersReducedMotion } from "./usePrefersReducedMotion.js";
+export type { IconProps } from "./iconBase.js";

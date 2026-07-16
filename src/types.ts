@@ -63,6 +63,7 @@ export type WeatherIconKey =
   | "drizzle"
   | "light-rain"
   | "rain"
+  | "freezing-rain"
   | "heavy-rain"
   | "light-snow"
   | "snow"
