@@ -5,12 +5,12 @@
  * dedup, accepting an injected fetch, and (v0.2.0) nullable readings +
  * `wind_gusts_10m` + an `observedAt` data-age timestamp (WX-P1-1/P2-4/P2-5).
  */
-import { coordKey, fetchWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, roundOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
-const cache = new WeatherCache(CACHE_TTL_MS);
+const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -80,7 +80,7 @@ export async function getCurrentWeather(coords, opts = {}) {
                 : "",
         };
         return result;
-    }, null);
+    }, null, bindOnError(opts, "getCurrentWeather", coords.lat, coords.lon));
 }
 /** Clear the current-weather cache (test hook / sign-out hygiene). */
 export function clearCurrentCache() {

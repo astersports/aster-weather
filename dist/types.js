@@ -19,6 +19,15 @@
 export const FORECAST_DAYS = 14;
 /** Default fetch timeout for Open-Meteo calls (ms). */
 export const FETCH_TIMEOUT_MS = 5000;
+/**
+ * Loader resilience (v0.5.0, M5). One retry with a fixed backoff before a fetch
+ * falls through to stale-or-empty — absorbs a single transient blip instead of
+ * serving stale for the whole TTL window. Each attempt keeps its own
+ * {@link FETCH_TIMEOUT_MS} budget; a retry-then-fail emits exactly one
+ * `onError` signal (paired with M1), never one per attempt.
+ */
+export const FETCH_RETRY_COUNT = 1;
+export const FETCH_RETRY_BACKOFF_MS = 500;
 /** Skip an event match when the nearest forecast hour is further than this. */
 export const MAX_FORECAST_HOUR_GAP_MS = 6 * 60 * 60 * 1000;
 /**

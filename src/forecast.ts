@@ -23,10 +23,12 @@ import {
   type HourlyForecast,
 } from "./types.js";
 import {
+  bindOnError,
   coordKey,
   fetchWithTimeout,
   isValidCoord,
   numOrNull,
+  RESILIENT_CACHE,
   roundOrNull,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
@@ -41,7 +43,11 @@ interface HourlyBundle {
 }
 
 const EMPTY_BUNDLE: HourlyBundle = { hours: [], utcOffsetSeconds: 0 };
-const cache = new WeatherCache<HourlyBundle>(CACHE_TTL_MS);
+const cache = new WeatherCache<HourlyBundle>(
+  CACHE_TTL_MS,
+  undefined,
+  RESILIENT_CACHE,
+);
 
 function buildUrl(lat: number, lon: number): string {
   const params = new URLSearchParams({
@@ -129,6 +135,7 @@ async function loadHourly(
       return { hours, utcOffsetSeconds: data.utc_offset_seconds ?? 0 };
     },
     EMPTY_BUNDLE,
+    bindOnError(opts, "fetchForecast", coords.lat, coords.lon),
   );
 }
 

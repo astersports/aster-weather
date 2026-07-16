@@ -19,6 +19,15 @@
 export declare const FORECAST_DAYS = 14;
 /** Default fetch timeout for Open-Meteo calls (ms). */
 export declare const FETCH_TIMEOUT_MS = 5000;
+/**
+ * Loader resilience (v0.5.0, M5). One retry with a fixed backoff before a fetch
+ * falls through to stale-or-empty — absorbs a single transient blip instead of
+ * serving stale for the whole TTL window. Each attempt keeps its own
+ * {@link FETCH_TIMEOUT_MS} budget; a retry-then-fail emits exactly one
+ * `onError` signal (paired with M1), never one per attempt.
+ */
+export declare const FETCH_RETRY_COUNT = 1;
+export declare const FETCH_RETRY_BACKOFF_MS = 500;
 /** Skip an event match when the nearest forecast hour is further than this. */
 export declare const MAX_FORECAST_HOUR_GAP_MS: number;
 /**
@@ -154,10 +163,32 @@ export type FetchImpl = (url: string, init?: {
     status: number;
     json: () => Promise<unknown>;
 }>;
+/** Which loader an {@link WeatherErrorContext} came from. */
+export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast";
+/**
+ * Context passed to {@link FetchOptions.onError} so a consumer can tag the
+ * failure by call + venue when routing it into its own tracker.
+ */
+export interface WeatherErrorContext {
+    /** The loader that failed. */
+    call: WeatherCall;
+    lat: number;
+    lon: number;
+}
 export interface FetchOptions {
     /** Injected fetch (SSRF boundary / test stub). Defaults to global fetch. */
     fetchImpl?: FetchImpl;
     /** Per-call timeout override (ms). */
     timeoutMs?: number;
+    /**
+     * Observability hook (v0.5.0, M1). Invoked ONCE per fetch that ultimately
+     * fails — after retries are exhausted, immediately before the engine falls
+     * back to stale-or-empty. The engine still never throws; an omitted hook is
+     * zero behavior change. This is the single channel that lets a consumer route
+     * an Open-Meteo outage into Sentry/PostHog instead of it vanishing into
+     * `[]`/`null`/stale. A background stale-while-revalidate refresh that fails
+     * also fires it (the refresh is exactly the silent failure this surfaces).
+     */
+    onError?: (err: unknown, ctx: WeatherErrorContext) => void;
 }
 //# sourceMappingURL=types.d.ts.map

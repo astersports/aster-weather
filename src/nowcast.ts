@@ -15,17 +15,23 @@ import {
   type NowcastPoint,
 } from "./types.js";
 import {
+  bindOnError,
   coordKey,
   fetchWithTimeout,
   isValidCoord,
   numOrNull,
+  RESILIENT_CACHE,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
 
-const cache = new WeatherCache<NowcastPoint[]>(CACHE_TTL_MS);
+const cache = new WeatherCache<NowcastPoint[]>(
+  CACHE_TTL_MS,
+  undefined,
+  RESILIENT_CACHE,
+);
 
 function buildUrl(lat: number, lon: number): string {
   const params = new URLSearchParams({
@@ -88,6 +94,7 @@ export async function getNowcast(
       }));
     },
     [],
+    bindOnError(opts, "getNowcast", coords.lat, coords.lon),
   );
 }
 
