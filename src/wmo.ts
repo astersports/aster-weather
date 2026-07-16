@@ -12,9 +12,11 @@
  * duplication across useWeather + tournamentWeather + the parish engine).
  */
 
+import type { WeatherIconKey } from "./types.js";
+
 export interface WmoInfo {
   description: string;
-  icon: string; // string key for the SVG dispatcher (see ./icons)
+  icon: WeatherIconKey; // typed key for the SVG dispatcher (see ./icons)
 }
 
 /** Canonical WMO code → { description, SVG-icon key }. From St. Patrick. */

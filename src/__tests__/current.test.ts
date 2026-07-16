@@ -11,11 +11,14 @@ function stubCurrent(overrides: Record<string, unknown> = {}): FetchImpl {
     ok: true,
     status: 200,
     json: async () => ({
+      utc_offset_seconds: -4 * 3600,
       current: {
+        time: "2026-06-17T15:45",
         temperature_2m: 72.4,
         apparent_temperature: 70.1,
         weather_code: 61,
         wind_speed_10m: 8.6,
+        wind_gusts_10m: 15.2,
         is_day: 1,
         relative_humidity_2m: 55,
       },
@@ -43,10 +46,13 @@ describe("getCurrentWeather", () => {
     expect(cw!.description).toBe("Slight rain");
     expect(cw!.icon).toBe("light-rain");
     expect(cw!.windSpeed).toBe(9);
+    expect(cw!.windGusts).toBe(15); // WX-P2-4
     expect(cw!.isDay).toBe(true);
     expect(cw!.humidity).toBe(55);
     expect(cw!.sunrise).toBe("5:21 AM");
     expect(cw!.sunset).toBe("8:29 PM");
+    // WX-P2-5: observedAt = 15:45 local at offset -4h = 19:45 UTC.
+    expect(cw!.observedAt).toBe(Date.UTC(2026, 5, 17, 19, 45, 0));
   });
 
   it("returns null for invalid coordinates without calling fetch", async () => {

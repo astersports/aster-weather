@@ -14,7 +14,7 @@ committed):
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.1.0"
+    "@aster/weather": "github:astersports/aster-weather#v0.2.0"
   }
 }
 ```
@@ -28,6 +28,7 @@ import {
   getWeatherForEvent,   // (coords, eventISO, opts?) => EventWeather | null
   getCurrentWeather,    // (coords, opts?) => CurrentWeather | null  (15-min cache)
   getDailyForecast,     // (coords, opts?) => DailyForecast[]  (60-min cache)
+  getNowcast,           // (coords, opts?) => NowcastPoint[]  (15-min precip nowcast, 10-min cache)
   coordsForEvent,       // (events, locations, orgDefault) => [lat, lon]
   weatherLocationFrom,  // (events, locations) => { lat, lon, city } | null
   isWithinForecastWindow,
@@ -44,6 +45,13 @@ const atKickoff = getWeatherForTime(hours, "2026-06-26T18:00:00-04:00");
 Hour matching is pure epoch arithmetic — no host-timezone drift. Pass an absolute
 ISO string (with offset or `Z`) to the matchers.
 
+### Measurement fields are `number | null`
+Since v0.2.0, every measurement (`temperature`, `precipitationProbability`,
+`windSpeed`, `windGusts`, …) is `number | null`. `null` means Open-Meteo did not
+report a value for that slot — it is **never** fabricated as `0`. Warning flags
+(`isRainWarning` / `isSevereWarning`) treat `null` as "unknown" and do not fire
+off a missing reading. Render `null` as "—" / "N/A", not `0`.
+
 ### Injectable fetch (SSRF boundary / tests)
 Every fetch fn takes `opts.fetchImpl`. Server consumers with an SSRF guard pass
 it through; tests stub the network:
@@ -51,6 +59,14 @@ it through; tests stub the network:
 ```ts
 await fetchForecast(coords, { fetchImpl: safeFetch }); // astersports-web
 ```
+
+> **SSRF note:** the DEFAULT path (no `fetchImpl`) uses the global `fetch` with
+> **no SSRF guard**. That is safe here because every request targets a fixed
+> constant Open-Meteo host with only numeric, bounds-checked lat/lon via
+> `URLSearchParams` — there is no attacker-controlled destination. Even so, a
+> server consumer behind an egress policy SHOULD pass its own `opts.fetchImpl`
+> boundary. On timeout the injected impl receives an `AbortSignal` and is
+> aborted (v0.2.0), so a slow upstream can't leak a socket.
 
 ## Icons (`@aster/weather/icons`) — React
 

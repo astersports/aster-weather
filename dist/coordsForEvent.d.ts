@@ -20,18 +20,17 @@ export interface WeatherAnchor extends Coords {
 /**
  * Pick the forecast anchor: the first event (already sorted by the caller)
  * whose location carries lat/lon. Returns `{ lat, lon, city }` or null.
- * City = the address segment after the first comma (same heuristic as the
- * venue-list city), falling back to the first segment or the venue name.
  */
 export declare function weatherLocationFrom(events: Array<{
     location_id?: string | number | null;
 }> | null | undefined, locations: Record<string | number, WeatherLocation> | null | undefined): WeatherAnchor | null;
 /**
  * Resolve the weather-anchor coords for a set of events. Returns the first
- * event-location carrying lat/lon, else `orgDefault`. Returns a `[lat, lon]`
- * tuple to spread straight into a `useWeather(lat, lon)`-style hook.
+ * event-location carrying lat/lon, else `orgDefault`. Returns a `Coords`
+ * object so it feeds `fetchForecast`/`getCurrentWeather`/`getDailyForecast`
+ * directly (WX-P2-14) — those take `Coords`, not a tuple.
  */
 export declare function coordsForEvent(events: Array<{
     location_id?: string | number | null;
-}> | null | undefined, locations: Record<string | number, WeatherLocation> | null | undefined, orgDefault: [number, number]): [number, number];
+}> | null | undefined, locations: Record<string | number, WeatherLocation> | null | undefined, orgDefault: Coords): Coords;
 //# sourceMappingURL=coordsForEvent.d.ts.map

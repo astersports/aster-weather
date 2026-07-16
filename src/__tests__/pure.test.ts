@@ -71,20 +71,28 @@ describe("coordsForEvent / weatherLocationFrom", () => {
   const locations = {
     a: { lat: null, lon: null, address: "No Coords, Nowhere" },
     b: { lat: 41.1, lon: -73.7, address: "123 Main St, Armonk, NY", name: "WCC" },
+    c: { lat: 42.2, lon: -71.1, address: "Armonk, NY", name: "Town Field" },
+    d: { lat: 40.0, lon: -70.0, address: ",", name: "Fallback Gym" },
   };
-  it("picks the first event-location carrying coords + city heuristic", () => {
+  it("picks the first event-location carrying coords + city heuristic (3-segment)", () => {
     const anchor = weatherLocationFrom([{ location_id: "a" }, { location_id: "b" }], locations);
     expect(anchor).toEqual({ lat: 41.1, lon: -73.7, city: "Armonk" });
+  });
+  it("WX-P2-6: 2-segment 'City, State' resolves to the CITY, not the state", () => {
+    expect(weatherLocationFrom([{ location_id: "c" }], locations)?.city).toBe("Armonk");
+  });
+  it("WX-P2-6: empty/comma-only address falls through to the venue name", () => {
+    expect(weatherLocationFrom([{ location_id: "d" }], locations)?.city).toBe("Fallback Gym");
   });
   it("returns null when no event location has coords", () => {
     expect(weatherLocationFrom([{ location_id: "a" }], locations)).toBeNull();
   });
-  it("coordsForEvent falls back to orgDefault", () => {
-    expect(coordsForEvent([], locations, [10, 20])).toEqual([10, 20]);
-    expect(coordsForEvent([{ location_id: "a" }], locations, [10, 20])).toEqual([10, 20]);
+  it("coordsForEvent falls back to orgDefault (Coords)", () => {
+    expect(coordsForEvent([], locations, { lat: 10, lon: 20 })).toEqual({ lat: 10, lon: 20 });
+    expect(coordsForEvent([{ location_id: "a" }], locations, { lat: 10, lon: 20 })).toEqual({ lat: 10, lon: 20 });
   });
-  it("coordsForEvent returns the anchor tuple when present", () => {
-    expect(coordsForEvent([{ location_id: "b" }], locations, [10, 20])).toEqual([41.1, -73.7]);
+  it("coordsForEvent returns Coords when present (feeds fetchForecast directly)", () => {
+    expect(coordsForEvent([{ location_id: "b" }], locations, { lat: 10, lon: 20 })).toEqual({ lat: 41.1, lon: -73.7 });
   });
 });
 
@@ -110,6 +118,7 @@ describe("getWeatherForTime (absolute epoch matcher)", () => {
     weatherCode: 0,
     cloudCover: 0,
     windSpeed: 5,
+    windGusts: 8,
     isDay: true,
   }));
   it("returns the closest hour within the window", () => {

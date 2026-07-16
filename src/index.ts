@@ -12,9 +12,11 @@
 export type {
   Coords,
   HourlyForecast,
+  NowcastPoint,
   EventWeather,
   CurrentWeather,
   DailyForecast,
+  WeatherIconKey,
   FetchImpl,
   FetchOptions,
 } from "./types.js";
@@ -24,6 +26,8 @@ export {
   MAX_FORECAST_HOUR_GAP_MS,
   HOURLY_MATCH_WINDOW_MS,
   DEFAULT_FORECAST_WINDOW_DAYS,
+  SEVERE_WIND_MPH,
+  SEVERE_GUST_MPH,
 } from "./types.js";
 
 // WMO maps (single source)
@@ -38,13 +42,8 @@ export {
   rainWord,
 } from "./wmo.js";
 
-// Helpers
-export {
-  parseOpenMeteoLocalTime,
-  coordKey,
-  isValidCoord,
-  fetchWithTimeout,
-} from "./helpers.js";
+// Public helpers (coordKey + fetchWithTimeout are internal — not exported)
+export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
 
 // Hourly forecast + event enrichment + matcher
 export {
@@ -53,6 +52,9 @@ export {
   getWeatherForEvent,
   clearForecastCache,
 } from "./forecast.js";
+
+// 15-minute precipitation nowcast
+export { getNowcast, clearNowcastCache } from "./nowcast.js";
 
 // Current conditions
 export { getCurrentWeather, clearCurrentCache } from "./current.js";

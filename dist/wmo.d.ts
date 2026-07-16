@@ -11,9 +11,10 @@
  * One place for the code→presentation mapping (resolves AP #42 byte-for-byte
  * duplication across useWeather + tournamentWeather + the parish engine).
  */
+import type { WeatherIconKey } from "./types.js";
 export interface WmoInfo {
     description: string;
-    icon: string;
+    icon: WeatherIconKey;
 }
 /** Canonical WMO code → { description, SVG-icon key }. From St. Patrick. */
 export declare const WMO_CODES: Record<number, WmoInfo>;
