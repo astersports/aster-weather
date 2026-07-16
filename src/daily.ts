@@ -35,11 +35,14 @@ function buildUrl(lat: number, lon: number): string {
       "temperature_2m_max",
       "temperature_2m_min",
       "precipitation_probability_max",
+      "wind_speed_10m_max",
+      "uv_index_max",
       "weather_code",
       "sunrise",
       "sunset",
     ].join(","),
     temperature_unit: "fahrenheit",
+    wind_speed_unit: "mph",
     timezone: "auto",
     forecast_days: FORECAST_DAYS.toString(),
   });
@@ -52,6 +55,8 @@ interface OpenMeteoDaily {
     temperature_2m_max?: (number | null)[];
     temperature_2m_min?: (number | null)[];
     precipitation_probability_max?: (number | null)[];
+    wind_speed_10m_max?: (number | null)[];
+    uv_index_max?: (number | null)[];
     weather_code?: number[];
     sunrise?: string[];
     sunset?: string[];
@@ -92,6 +97,8 @@ export async function getDailyForecast(
           high: roundOrNull(d.temperature_2m_max?.[i]),
           low: roundOrNull(d.temperature_2m_min?.[i]),
           precipProbabilityMax: numOrNull(d.precipitation_probability_max?.[i]),
+          windSpeedMax: roundOrNull(d.wind_speed_10m_max?.[i]),
+          uvIndexMax: numOrNull(d.uv_index_max?.[i]),
           weatherCode,
           icon: info.icon,
           description: info.description,

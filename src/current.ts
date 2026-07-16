@@ -34,12 +34,15 @@ function buildUrl(lat: number, lon: number): string {
       "weather_code",
       "wind_speed_10m",
       "wind_gusts_10m",
+      "wind_direction_10m",
+      "precipitation",
       "is_day",
       "relative_humidity_2m",
     ].join(","),
     daily: "sunrise,sunset",
     temperature_unit: "fahrenheit",
     wind_speed_unit: "mph",
+    precipitation_unit: "inch",
     timezone: "auto",
     forecast_days: "1",
   });
@@ -55,6 +58,8 @@ interface OpenMeteoCurrent {
     weather_code?: number;
     wind_speed_10m?: number | null;
     wind_gusts_10m?: number | null;
+    wind_direction_10m?: number | null;
+    precipitation?: number | null;
     is_day?: number;
     relative_humidity_2m?: number | null;
   };
@@ -96,6 +101,8 @@ export async function getCurrentWeather(
         icon: info.icon,
         windSpeed: roundOrNull(c.wind_speed_10m),
         windGusts: roundOrNull(c.wind_gusts_10m),
+        windDirection: roundOrNull(c.wind_direction_10m),
+        precipitation: numOrNull(c.precipitation),
         isDay: c.is_day === 1,
         humidity: numOrNull(c.relative_humidity_2m),
         observedAt: localIsoToEpoch(c.time, data.utc_offset_seconds ?? 0),

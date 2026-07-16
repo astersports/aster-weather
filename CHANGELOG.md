@@ -7,6 +7,22 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.4.0 — 2026-07-16
+
+Realtime enrichments (the deferred Wave 3 items) so aster-studio can converge
+off its own Open-Meteo client with **zero field loss**. **Additive /
+non-breaking** — new nullable fields only.
+
+### Added
+- **`CurrentWeather.windDirection`** (degrees) + **`CurrentWeather.precipitation`**
+  (inches, now) — WX-P3-3.
+- **`DailyForecast.windSpeedMax`** (mph) + **`DailyForecast.uvIndexMax`** — WX-P3-5 / WX-P3-4.
+- Requests `wind_direction_10m` + `precipitation` (current) and
+  `wind_speed_10m_max` + `uv_index_max` (daily) on the same Open-Meteo calls.
+
+All new fields are `number | null` (honest — never fabricated). Tests cover the
+new fields; consumers already on v0.2.0/v0.3.0 are unaffected.
+
 ## 0.3.0 — 2026-07-16
 
 L99 audit Wave 2 — the icon "superior visual experience" pass. **Additive /

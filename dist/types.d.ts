@@ -116,6 +116,8 @@ export interface CurrentWeather {
     icon: WeatherIconKey;
     windSpeed: number | null;
     windGusts: number | null;
+    windDirection: number | null;
+    precipitation: number | null;
     isDay: boolean;
     humidity: number | null;
     /** Epoch ms of the observation (Open-Meteo `current.time`) — data age for a realtime UI (WX-P2-5). */
@@ -128,6 +130,8 @@ export interface DailyForecast {
     high: number | null;
     low: number | null;
     precipProbabilityMax: number | null;
+    windSpeedMax: number | null;
+    uvIndexMax: number | null;
     weatherCode: number;
     icon: WeatherIconKey;
     description: string;
