@@ -19,6 +19,8 @@ function stubCurrent(overrides: Record<string, unknown> = {}): FetchImpl {
         weather_code: 61,
         wind_speed_10m: 8.6,
         wind_gusts_10m: 15.2,
+        wind_direction_10m: 213.4,
+        precipitation: 0.02,
         is_day: 1,
         relative_humidity_2m: 55,
       },
@@ -47,6 +49,8 @@ describe("getCurrentWeather", () => {
     expect(cw!.icon).toBe("light-rain");
     expect(cw!.windSpeed).toBe(9);
     expect(cw!.windGusts).toBe(15); // WX-P2-4
+    expect(cw!.windDirection).toBe(213); // v0.4.0, rounded
+    expect(cw!.precipitation).toBe(0.02); // v0.4.0
     expect(cw!.isDay).toBe(true);
     expect(cw!.humidity).toBe(55);
     expect(cw!.sunrise).toBe("5:21 AM");

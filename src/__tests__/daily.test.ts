@@ -20,6 +20,8 @@ function stubDaily(count: number): FetchImpl {
         temperature_2m_max: time.map(() => 81.6),
         temperature_2m_min: time.map(() => 62.3),
         precipitation_probability_max: time.map(() => 40),
+        wind_speed_10m_max: time.map(() => 14.7),
+        uv_index_max: time.map(() => 6.2),
         weather_code: time.map(() => 61),
         sunrise: time.map((d) => `${d}T05:21`),
         sunset: time.map((d) => `${d}T20:29`),
@@ -42,6 +44,8 @@ describe("getDailyForecast", () => {
     expect(d0.high).toBe(82); // rounded
     expect(d0.low).toBe(62);
     expect(d0.precipProbabilityMax).toBe(40);
+    expect(d0.windSpeedMax).toBe(15); // v0.4.0, rounded
+    expect(d0.uvIndexMax).toBe(6.2); // v0.4.0
     expect(d0.weatherCode).toBe(61);
     expect(d0.icon).toBe("light-rain");
     expect(d0.description).toBe("Slight rain");

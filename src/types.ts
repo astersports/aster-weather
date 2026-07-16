@@ -142,6 +142,8 @@ export interface CurrentWeather {
   icon: WeatherIconKey;
   windSpeed: number | null;
   windGusts: number | null;
+  windDirection: number | null; // degrees (v0.4.0 — WX-P3-3)
+  precipitation: number | null; // inches, current (v0.4.0 — WX-P3-3)
   isDay: boolean;
   humidity: number | null;
   /** Epoch ms of the observation (Open-Meteo `current.time`) — data age for a realtime UI (WX-P2-5). */
@@ -155,6 +157,8 @@ export interface DailyForecast {
   high: number | null;
   low: number | null;
   precipProbabilityMax: number | null;
+  windSpeedMax: number | null; // mph (v0.4.0 — WX-P3-5)
+  uvIndexMax: number | null; // (v0.4.0 — WX-P3-4)
   weatherCode: number; // WMO code
   icon: WeatherIconKey; // e.g. "clear", "rain", "partly-cloudy"
   description: string; // e.g. "Clear sky", "Moderate rain"
