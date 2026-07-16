@@ -19,16 +19,21 @@ export type {
   WeatherIconKey,
   FetchImpl,
   FetchOptions,
+  WeatherCall,
+  WeatherErrorContext,
 } from "./types.js";
 export {
   FORECAST_DAYS,
   FETCH_TIMEOUT_MS,
+  FETCH_RETRY_COUNT,
+  FETCH_RETRY_BACKOFF_MS,
   MAX_FORECAST_HOUR_GAP_MS,
   HOURLY_MATCH_WINDOW_MS,
   DEFAULT_FORECAST_WINDOW_DAYS,
   SEVERE_WIND_MPH,
   SEVERE_GUST_MPH,
 } from "./types.js";
+export type { CacheBehavior } from "./cache.js";
 
 // WMO maps (single source)
 export type { WmoInfo } from "./wmo.js";

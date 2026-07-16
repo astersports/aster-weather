@@ -1,6 +1,6 @@
 {
   "name": "@aster/weather",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Framework-agnostic weather core (Open-Meteo) + React SVG weather icons for the Aster Sports family. Canonical engine extracted from St. Patrick, merged with the aster-sports build's improvements.",
   "license": "MIT",
   "type": "module",

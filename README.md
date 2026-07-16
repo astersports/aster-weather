@@ -14,7 +14,7 @@ committed):
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.4.0"
+    "@aster/weather": "github:astersports/aster-weather#v0.5.0"
   }
 }
 ```
@@ -67,6 +67,30 @@ await fetchForecast(coords, { fetchImpl: safeFetch }); // astersports-web
 > server consumer behind an egress policy SHOULD pass its own `opts.fetchImpl`
 > boundary. On timeout the injected impl receives an `AbortSignal` and is
 > aborted (v0.2.0), so a slow upstream can't leak a socket.
+
+### Observability + resilience (v0.5.0)
+
+The engine never throws — a failed fetch becomes `[]`/`null`/stale. To make an
+Open-Meteo outage *visible*, pass `onError`; it fires **once** per fetch that
+ultimately fails (after the built-in retry), tagged with the call + venue:
+
+```ts
+await fetchForecast(coords, {
+  fetchImpl: safeFetch,
+  onError: (err, ctx) => reportError(err, { surface: "weather", ...ctx }),
+  //                            ctx = { call: "fetchForecast", lat, lon }
+});
+```
+
+An omitted hook is zero behavior change. Two resilience behaviors are always on:
+
+- **Retry:** one retry with a 500 ms backoff before falling back to stale-or-empty
+  (`FETCH_RETRY_COUNT` / `FETCH_RETRY_BACKOFF_MS`). A retry-then-fail emits one
+  `onError`, not one per attempt.
+- **Stale-while-revalidate:** an expired-but-cached value is returned immediately
+  while a background refresh runs (deduped), so no interactive caller blocks on a
+  cold fetch once a key is warm. Cold misses still block. A failed background
+  refresh keeps the stale value and fires `onError`.
 
 ## Icons (`@aster/weather/icons`) — React
 

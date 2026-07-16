@@ -8,11 +8,11 @@
  * Per-coord cached for 10 min (shorter than hourly — nowcast is the freshest
  * signal), with in-flight dedup + stale-on-error, via the shared cache.
  */
-import { coordKey, fetchWithTimeout, isValidCoord, numOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
-const cache = new WeatherCache(CACHE_TTL_MS);
+const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -60,7 +60,7 @@ export async function getNowcast(coords, opts = {}) {
             precipitation: numOrNull(m.precipitation?.[i]),
             windGusts: numOrNull(m.wind_gusts_10m?.[i]),
         }));
-    }, []);
+    }, [], bindOnError(opts, "getNowcast", coords.lat, coords.lon));
 }
 /** Clear the nowcast cache (test hook / sign-out hygiene). */
 export function clearNowcastCache() {

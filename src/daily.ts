@@ -12,11 +12,13 @@ import {
   type FetchOptions,
 } from "./types.js";
 import {
+  bindOnError,
   coordKey,
   fetchWithTimeout,
   isValidCoord,
   numOrNull,
   parseOpenMeteoLocalTime,
+  RESILIENT_CACHE,
   roundOrNull,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
@@ -25,7 +27,11 @@ import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
 
-const cache = new WeatherCache<DailyForecast[]>(CACHE_TTL_MS);
+const cache = new WeatherCache<DailyForecast[]>(
+  CACHE_TTL_MS,
+  undefined,
+  RESILIENT_CACHE,
+);
 
 function buildUrl(lat: number, lon: number): string {
   const params = new URLSearchParams({
@@ -109,6 +115,7 @@ export async function getDailyForecast(
       return forecasts;
     },
     [],
+    bindOnError(opts, "getDailyForecast", coords.lat, coords.lon),
   );
 }
 

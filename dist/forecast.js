@@ -11,13 +11,13 @@
  *   - an `isValidCoord` guard on the event path (WX-P3-7).
  */
 import { FORECAST_DAYS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
-import { coordKey, fetchWithTimeout, isValidCoord, numOrNull, roundOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
 const EMPTY_BUNDLE = { hours: [], utcOffsetSeconds: 0 };
-const cache = new WeatherCache(CACHE_TTL_MS);
+const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -81,7 +81,7 @@ async function loadHourly(coords, opts = {}) {
             isDay: h.is_day?.[i] === 1,
         }));
         return { hours, utcOffsetSeconds: data.utc_offset_seconds ?? 0 };
-    }, EMPTY_BUNDLE);
+    }, EMPTY_BUNDLE, bindOnError(opts, "fetchForecast", coords.lat, coords.lon));
 }
 /**
  * Fetch the multi-day hourly forecast for a coordinate. Cached for 60 min per

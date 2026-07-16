@@ -1,7 +1,20 @@
 /**
  * Internal helpers shared across the fetch modules.
  */
-import { type FetchOptions } from "./types.js";
+import { type FetchOptions, type WeatherCall } from "./types.js";
+import type { CacheBehavior } from "./cache.js";
+/**
+ * The resilience profile every loader's cache runs with (v0.5.0): one retry
+ * (M5) + stale-while-revalidate (M6). Shared so all four loaders stay identical.
+ */
+export declare const RESILIENT_CACHE: CacheBehavior;
+/**
+ * Bind a loader's `{ call, lat, lon }` context onto the consumer's `onError`
+ * hook (M1). Returns `undefined` when no hook was supplied, so the cache stays
+ * zero-overhead and the never-throw path is byte-for-byte unchanged for the
+ * (default) no-hook case.
+ */
+export declare function bindOnError(opts: FetchOptions, call: WeatherCall, lat: number, lon: number): ((err: unknown) => void) | undefined;
 /**
  * Parse an Open-Meteo local time string ("2026-06-17T05:21") into a friendly
  * clock label ("5:21 AM") WITHOUT going through `new Date()` — Open-Meteo

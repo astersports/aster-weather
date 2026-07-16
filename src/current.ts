@@ -8,12 +8,14 @@
 
 import { type Coords, type CurrentWeather, type FetchOptions } from "./types.js";
 import {
+  bindOnError,
   coordKey,
   fetchWithTimeout,
   isValidCoord,
   localIsoToEpoch,
   numOrNull,
   parseOpenMeteoLocalTime,
+  RESILIENT_CACHE,
   roundOrNull,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
@@ -22,7 +24,11 @@ import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
 
-const cache = new WeatherCache<CurrentWeather | null>(CACHE_TTL_MS);
+const cache = new WeatherCache<CurrentWeather | null>(
+  CACHE_TTL_MS,
+  undefined,
+  RESILIENT_CACHE,
+);
 
 function buildUrl(lat: number, lon: number): string {
   const params = new URLSearchParams({
@@ -116,6 +122,7 @@ export async function getCurrentWeather(
       return result;
     },
     null,
+    bindOnError(opts, "getCurrentWeather", coords.lat, coords.lon),
   );
 }
 

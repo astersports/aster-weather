@@ -7,6 +7,44 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.5.0 — 2026-07-16
+
+Observability core (Wave B, roadmap `docs/WEATHER_E2E_EFFICIENCY_AND_ENHANCEMENTS_2026-07-16.md`).
+The engine converted every fetch failure to `[]`/`null`/stale before any consumer
+regained control — there was no way for an operator to know Open-Meteo was failing
+for a venue. This release adds the failure channel plus two resilience behaviors.
+**Additive API** (new optional `onError`; new exported types/constants); one
+**behavior change** (SWR) that keeps the same shapes — see below.
+
+### Added
+- **`FetchOptions.onError?(err, ctx)`** (M1) — the keystone. Fires **once** per
+  fetch that ultimately fails (after the retry), immediately before the engine
+  falls back to stale-or-empty. `ctx` is `{ call, lat, lon }` so a consumer can
+  tag the failure by loader + venue and route it into Sentry/PostHog. The engine
+  still **never throws**; an omitted hook is zero behavior change.
+- **`WeatherCall`** + **`WeatherErrorContext`** exported types; **`CacheBehavior`**
+  exported (the per-cache resilience profile).
+- **`FETCH_RETRY_COUNT`** (1) + **`FETCH_RETRY_BACKOFF_MS`** (500) constants.
+
+### Behavior
+- **Bounded retry (M5):** each loader now retries **once** with a 500 ms backoff
+  before falling through to stale-or-empty — a single transient blip no longer
+  serves stale for the whole TTL window. A retry-then-fail emits **one** `onError`
+  signal, never one per attempt. Each attempt keeps its own timeout budget.
+- **Stale-while-revalidate (M6):** when an **expired-but-present** entry exists,
+  it is now returned **immediately** while a background refresh runs (deduped),
+  so no interactive caller blocks on a cold fetch once a key is warm. Same return
+  shapes; the only observable change is timing (the first post-expiry caller gets
+  the last-known-good instantly instead of blocking for a fresh fetch, and sees
+  the fresh value on the next call). Cold misses still block (there is nothing to
+  serve). A failed background refresh keeps the stale value **and** fires `onError`.
+
+### Tests
+- `observability.test.ts`: onError once-on-final-failure + never-on-success,
+  retry fail-once-then-succeed (no signal) vs retry-then-fail (one signal), SWR
+  stale-serve + background refresh + background-failure onError, and a
+  `fetchForecast` integration asserting the `{ call, lat, lon }` context. 66 passing.
+
 ## 0.4.0 — 2026-07-16
 
 Realtime enrichments (the deferred Wave 3 items) so aster-studio can converge

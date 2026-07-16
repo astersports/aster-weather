@@ -106,13 +106,13 @@ describe("WX-P1-5 — stale-cache-on-error", () => {
   });
 });
 
-describe("WX-P2-24 — cache re-fetches after TTL expiry", () => {
+describe("WX-P2-24 / M6 — cache re-fetches after TTL expiry (stale-while-revalidate)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     clearForecastCache();
   });
   afterEach(() => vi.useRealTimers());
-  it("one fetch within TTL, a second after it", async () => {
+  it("within TTL serves cache; past TTL serves stale immediately then refreshes behind", async () => {
     const startSec = Math.floor(Date.now() / 1000);
     let calls = 0;
     const impl: FetchImpl = async (url, init) => {
@@ -121,10 +121,14 @@ describe("WX-P2-24 — cache re-fetches after TTL expiry", () => {
     };
     await fetchForecast(COORDS, { fetchImpl: impl });
     await fetchForecast(COORDS, { fetchImpl: impl });
-    expect(calls).toBe(1); // within TTL
+    expect(calls).toBe(1); // within TTL — one fetch shared
     vi.advanceTimersByTime(61 * 60 * 1000);
-    await fetchForecast(COORDS, { fetchImpl: impl });
-    expect(calls).toBe(2); // past TTL
+    // SWR: the expired entry is returned to THIS caller without blocking on the
+    // network; the refetch runs in the background (M6).
+    const stale = await fetchForecast(COORDS, { fetchImpl: impl });
+    expect(stale).toHaveLength(4);
+    await vi.runAllTimersAsync(); // let the background refresh settle
+    expect(calls).toBe(2); // past TTL — background refresh fired exactly once
   });
 });
 
