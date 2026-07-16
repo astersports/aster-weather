@@ -8,10 +8,28 @@
  * Pure. No app constants.
  */
 /**
+ * Derive a display city from a free-text address (WX-P2-6). Addresses come in
+ * two common shapes: "Street, City, State[, ...]" (city is the 2nd segment)
+ * and "City, State" (city is the 1st segment). The old heuristic always took
+ * the 2nd segment, so "Armonk, NY" resolved to the STATE. Empty segments (a
+ * trailing comma) are dropped so they can't win, falling through to `name`.
+ */
+function cityFromAddress(address, name) {
+    const segs = address
+        ? String(address)
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+    if (segs.length >= 3)
+        return segs[1]; // "street, city, state" → city
+    if (segs.length >= 1)
+        return segs[0]; // "city, state" / single → first
+    return name || null;
+}
+/**
  * Pick the forecast anchor: the first event (already sorted by the caller)
  * whose location carries lat/lon. Returns `{ lat, lon, city }` or null.
- * City = the address segment after the first comma (same heuristic as the
- * venue-list city), falling back to the first segment or the venue name.
  */
 export function weatherLocationFrom(events, locations) {
     if (!events || !locations)
@@ -25,25 +43,19 @@ export function weatherLocationFrom(events, locations) {
             // the guard above already proved both are present at runtime.
             const lat = loc.lat;
             const lon = loc.lon;
-            const parts = loc.address
-                ? String(loc.address).split(",").map((s) => s.trim())
-                : [];
-            return {
-                lat,
-                lon,
-                city: parts.length >= 2 ? parts[1] : parts[0] || loc.name || null,
-            };
+            return { lat, lon, city: cityFromAddress(loc.address, loc.name) };
         }
     }
     return null;
 }
 /**
  * Resolve the weather-anchor coords for a set of events. Returns the first
- * event-location carrying lat/lon, else `orgDefault`. Returns a `[lat, lon]`
- * tuple to spread straight into a `useWeather(lat, lon)`-style hook.
+ * event-location carrying lat/lon, else `orgDefault`. Returns a `Coords`
+ * object so it feeds `fetchForecast`/`getCurrentWeather`/`getDailyForecast`
+ * directly (WX-P2-14) — those take `Coords`, not a tuple.
  */
 export function coordsForEvent(events, locations, orgDefault) {
     const anchor = weatherLocationFrom(events || [], locations || {});
-    return anchor ? [anchor.lat, anchor.lon] : orgDefault;
+    return anchor ? { lat: anchor.lat, lon: anchor.lon } : orgDefault;
 }
 //# sourceMappingURL=coordsForEvent.js.map

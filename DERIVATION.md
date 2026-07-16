@@ -98,3 +98,13 @@ Per the build brief: the **app's** weather (aster-sports) and St. Patrick's
 weather are **not** modified by this package's creation. They converge onto
 `@aster/weather` in their own later passes. The first and only consumer wired in
 this pass is astersports-web PR #106's AAU card (a separate stacked PR).
+
+## Consumer map (updated 2026-07-16, WX-P3-14)
+The "later passes" above have partly happened; the actual state:
+- **st-patricks-armonk** — DEEP consumer. `server/weather/{forecast,current,daily,helpers}.ts`
+  are thin adapters over the package; client icons come from `@aster/weather/icons`.
+- **aster-studio** — narrow consumer: imports only `isValidCoord`.
+- **aster-io** — declares the dependency but imports nothing yet (to be wired).
+- **aster-sports** — not yet a consumer; still on its own `src/lib/weather/` copy.
+
+See `docs/WEATHER_L99_AUDIT_2026-07-16.md` §4 for the per-consumer blast radius.

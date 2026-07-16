@@ -30,6 +30,17 @@ jobs:
       - name: Test
         run: pnpm run test
 
+      # WX-P1-2: dist/ is committed and consumed directly (no consumer build
+      # step), so a src-only merge could ship stale compiled bytes to every
+      # consumer. Rebuild and fail if the committed dist drifts from src.
+      - name: Verify committed dist matches a fresh build
+        run: |
+          pnpm run build
+          if ! git diff --exit-code -- dist/; then
+            echo "::error::Committed dist/ is out of date. Run 'pnpm build' and commit dist/."
+            exit 1
+          fi
+
   # Supply-chain faucet gate — mirrors astersports/aster-sports (Phase 0.0 /
   # PLAN_ON_TRUTH). Dependency changes that are a major-version bump (or touch a
   # money/child/auth-adjacent package, none present here today) must NOT auto-

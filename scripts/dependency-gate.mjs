@@ -32,7 +32,10 @@ const SENSITIVE = [
   /^@supabase\//, /supabase-js/,                   // data/RLS (child) + auth
   /(^|[-_/])cookie($|[-_/])/,                       // session cookies (cookie 1→2)
   /session/i,                                       // *-session stores
-  /(^|[-_/])auth($|[-_/])/i, /oauth/i,              // auth / oauth libs
+  // auth / oauth libs. WX-P2-17: broadened so @auth/core, auth0, @clerk, lucia,
+  // and express-openid-connect can't slip past a minor/patch bump or a net-new add.
+  /(^|[-_/])auth\d*($|[-_/])/i, /^@auth\//i, /oauth/i, /openid/i,
+  /@clerk\//i, /(^|[-_/])lucia($|[-_/])/i,
   /^jose$/, /jsonwebtoken/, /(^|[-_/])jwt($|[-_/])/i, // token signing/verify
   /passport/i, /bcrypt/i, /argon2/i,               // credential / password hashing
 ];
@@ -166,6 +169,12 @@ for (const name of new Set([...base.keys(), ...head.keys()])) {
   if (b && b.size && h && h.size) {
     const bMax = maxVer(b), hMax = maxVer(h);
     if (isMajorBump(bMax, hMax)) reasons.push(`major bump ${bMax} → ${hMax}`);
+    // WX-P3-17: fail closed. If the version changed but either side is an
+    // unparseable specifier (git ref, dist-tag, workspace:/file:), we can't
+    // prove it's a safe bump — flag it for a human instead of silently passing.
+    else if (!partsOf(bMax) || !partsOf(hMax)) {
+      reasons.push(`unparseable version change ${bMax} → ${hMax} (fail-closed)`);
+    }
   }
   if (reasons.length) {
     const from = b && b.size ? maxVer(b) : '(added)';

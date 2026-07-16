@@ -10,10 +10,25 @@ import { type FetchOptions } from "./types.js";
  * From St. Patrick `parseOpenMeteoLocalTime`.
  */
 export declare function parseOpenMeteoLocalTime(isoTime: string): string;
+/**
+ * Convert an Open-Meteo venue-local ISO string ("2026-06-17T15:45", no zone)
+ * to an absolute epoch-ms using the response's `utc_offset_seconds` — the
+ * inverse of the `stripLabel` shift, so it stays free of the host-timezone bug.
+ * Used for the current-conditions "observed at" time (WX-P2-5). Returns null
+ * on a malformed input.
+ */
+export declare function localIsoToEpoch(isoTime: string | null | undefined, utcOffsetSeconds: number): number | null;
 /** Round to 3 decimals (~110 m) so nearby callers share a cache entry. */
 export declare function coordKey(lat: number, lon: number): string;
 /** Coordinate sanity check. Merged from astersports-web `isValidCoord`. */
 export declare function isValidCoord(lat: number, lon: number): boolean;
+/**
+ * Map an Open-Meteo reading to `number | null` — a missing/`null`/non-finite
+ * value stays `null` ("unknown"), never a fabricated `0` (WX-P1-1). Use
+ * {@link roundOrNull} for temps/wind, {@link numOrNull} for probabilities/amounts.
+ */
+export declare function numOrNull(v: number | null | undefined): number | null;
+export declare function roundOrNull(v: number | null | undefined): number | null;
 interface MinimalResponse {
     ok: boolean;
     status: number;
@@ -24,12 +39,12 @@ interface MinimalResponse {
  * (SSRF boundary / test stub); otherwise the global `fetch`. From St. Patrick
  * `fetchWithTimeout`, generalized to accept an injected implementation.
  *
- * The timeout is enforced on BOTH paths: the injected `fetchImpl` is raced
- * against the same `timeoutMs` so a slow/hung consumer fetch can't stall a
- * forecast call indefinitely. The injected impl's signature
- * (`(url) => Promise<...>`) takes no AbortSignal, so we can't abort its
- * in-flight request — but the race ensures the caller's promise still rejects
- * with a timeout, matching the global-fetch path's behavior.
+ * v0.2.0 (WX-P2-16): a single `AbortController` drives BOTH paths, and the
+ * injected `fetchImpl` now receives `{ signal }` — so on timeout the underlying
+ * request is actually aborted (no more leaked socket per timed-out injected
+ * call). We ALSO race against the timeout: a well-behaved impl aborts and frees
+ * its socket, while a misbehaving impl that ignores the signal still can't hang
+ * the caller — the race rejects regardless. Best of both.
  */
 export declare function fetchWithTimeout(url: string, opts?: FetchOptions): Promise<MinimalResponse>;
 export {};

@@ -1,15 +1,16 @@
 /**
- * 7-day daily forecast — high/low, precipitation, sunrise/sunset.
+ * Multi-day daily forecast — high/low, precipitation, sunrise/sunset.
  * Canonical from St. Patrick `server/weather/daily.ts`, parameterized by
- * coordinate, per-coord cached (60 min) with in-flight dedup, injected fetch.
+ * coordinate, per-coord cached (60 min) with in-flight dedup, injected fetch,
+ * and (v0.2.0) nullable readings via the shared cache (WX-P1-1 / WX-P2-7).
  */
 import { FORECAST_DAYS, } from "./types.js";
-import { coordKey, fetchWithTimeout, isValidCoord, parseOpenMeteoLocalTime } from "./helpers.js";
+import { coordKey, fetchWithTimeout, isValidCoord, numOrNull, parseOpenMeteoLocalTime, roundOrNull, } from "./helpers.js";
+import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
-const cache = new Map();
-const inflight = new Map();
+const cache = new WeatherCache(CACHE_TTL_MS);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -32,65 +33,45 @@ export async function getDailyForecast(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
         return [];
     const key = coordKey(coords.lat, coords.lon);
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-        return cached.data;
-    }
-    const existing = inflight.get(key);
-    if (existing)
-        return existing;
-    const job = (async () => {
+    return cache.get(key, async () => {
+        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
+        if (!res.ok) {
+            console.error(`Open-Meteo daily: HTTP ${res.status}`);
+            throw new Error(`daily HTTP ${res.status}`);
+        }
+        let data;
         try {
-            const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-            if (!res.ok) {
-                console.error(`Open-Meteo daily: HTTP ${res.status}`);
-                return cached?.data ?? [];
-            }
-            let data;
-            try {
-                data = (await res.json());
-            }
-            catch {
-                console.error("Open-Meteo daily: failed to parse JSON");
-                return cached?.data ?? [];
-            }
-            const d = data.daily;
-            if (!d || !Array.isArray(d.time)) {
-                console.error("Open-Meteo daily: unexpected response shape");
-                return cached?.data ?? [];
-            }
-            const forecasts = d.time.map((date, i) => {
-                const weatherCode = d.weather_code?.[i] ?? 0;
-                const info = getWeatherInfo(weatherCode);
-                return {
-                    date,
-                    high: Math.round(d.temperature_2m_max?.[i] ?? 0),
-                    low: Math.round(d.temperature_2m_min?.[i] ?? 0),
-                    precipProbabilityMax: d.precipitation_probability_max?.[i] ?? 0,
-                    weatherCode,
-                    icon: info.icon,
-                    description: info.description,
-                    sunrise: d.sunrise?.[i] ? parseOpenMeteoLocalTime(d.sunrise[i]) : "",
-                    sunset: d.sunset?.[i] ? parseOpenMeteoLocalTime(d.sunset[i]) : "",
-                };
-            });
-            cache.set(key, { data: forecasts, fetchedAt: Date.now() });
-            return forecasts;
+            data = (await res.json());
         }
-        catch (error) {
-            console.error("Daily forecast fetch error:", error);
-            return cached?.data ?? [];
+        catch {
+            console.error("Open-Meteo daily: failed to parse JSON");
+            throw new Error("daily parse");
         }
-        finally {
-            inflight.delete(key);
+        const d = data.daily;
+        if (!d || !Array.isArray(d.time)) {
+            console.error("Open-Meteo daily: unexpected response shape");
+            throw new Error("daily shape");
         }
-    })();
-    inflight.set(key, job);
-    return job;
+        const forecasts = d.time.map((date, i) => {
+            const weatherCode = d.weather_code?.[i] ?? 0;
+            const info = getWeatherInfo(weatherCode);
+            return {
+                date,
+                high: roundOrNull(d.temperature_2m_max?.[i]),
+                low: roundOrNull(d.temperature_2m_min?.[i]),
+                precipProbabilityMax: numOrNull(d.precipitation_probability_max?.[i]),
+                weatherCode,
+                icon: info.icon,
+                description: info.description,
+                sunrise: d.sunrise?.[i] ? parseOpenMeteoLocalTime(d.sunrise[i]) : "",
+                sunset: d.sunset?.[i] ? parseOpenMeteoLocalTime(d.sunset[i]) : "",
+            };
+        });
+        return forecasts;
+    }, []);
 }
 /** Clear the daily-forecast cache (test hook / sign-out hygiene). */
 export function clearDailyCache() {
     cache.clear();
-    inflight.clear();
 }
 //# sourceMappingURL=daily.js.map

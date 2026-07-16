@@ -2,14 +2,15 @@
  * Current conditions (real-time) + today's sunrise/sunset.
  * Canonical from St. Patrick `server/weather/current.ts`, parameterized by
  * coordinate (no hardcoded Armonk), per-coord cached (15 min) with in-flight
- * dedup, and accepting an injected fetch.
+ * dedup, accepting an injected fetch, and (v0.2.0) nullable readings +
+ * `wind_gusts_10m` + an `observedAt` data-age timestamp (WX-P1-1/P2-4/P2-5).
  */
-import { coordKey, fetchWithTimeout, isValidCoord, parseOpenMeteoLocalTime } from "./helpers.js";
+import { coordKey, fetchWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, roundOrNull, } from "./helpers.js";
+import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
-const cache = new Map();
-const inflight = new Map();
+const cache = new WeatherCache(CACHE_TTL_MS);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -19,6 +20,7 @@ function buildUrl(lat, lon) {
             "apparent_temperature",
             "weather_code",
             "wind_speed_10m",
+            "wind_gusts_10m",
             "is_day",
             "relative_humidity_2m",
         ].join(","),
@@ -34,63 +36,49 @@ export async function getCurrentWeather(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
         return null;
     const key = coordKey(coords.lat, coords.lon);
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-        return cached.data;
-    }
-    const existing = inflight.get(key);
-    if (existing)
-        return existing;
-    const job = (async () => {
+    return cache.get(key, async () => {
+        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
+        if (!res.ok) {
+            console.error(`Open-Meteo current: HTTP ${res.status}`);
+            throw new Error(`current HTTP ${res.status}`);
+        }
+        let data;
         try {
-            const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-            if (!res.ok) {
-                console.error(`Open-Meteo current: HTTP ${res.status}`);
-                return cached?.data ?? null;
-            }
-            let data;
-            try {
-                data = (await res.json());
-            }
-            catch {
-                console.error("Open-Meteo current: failed to parse JSON");
-                return cached?.data ?? null;
-            }
-            if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
-                console.error("Open-Meteo current: unexpected response shape");
-                return cached?.data ?? null;
-            }
-            const c = data.current;
-            const info = getWeatherInfo(c.weather_code ?? 0);
-            const result = {
-                temperature: Math.round(c.temperature_2m ?? 0),
-                feelsLike: Math.round(c.apparent_temperature ?? 0),
-                weatherCode: c.weather_code ?? 0,
-                description: info.description,
-                icon: info.icon,
-                windSpeed: Math.round(c.wind_speed_10m ?? 0),
-                isDay: c.is_day === 1,
-                humidity: c.relative_humidity_2m ?? 0,
-                sunrise: data.daily?.sunrise?.[0] ? parseOpenMeteoLocalTime(data.daily.sunrise[0]) : "",
-                sunset: data.daily?.sunset?.[0] ? parseOpenMeteoLocalTime(data.daily.sunset[0]) : "",
-            };
-            cache.set(key, { data: result, fetchedAt: Date.now() });
-            return result;
+            data = (await res.json());
         }
-        catch (error) {
-            console.error("Current weather fetch error:", error);
-            return cached?.data ?? null;
+        catch {
+            console.error("Open-Meteo current: failed to parse JSON");
+            throw new Error("current parse");
         }
-        finally {
-            inflight.delete(key);
+        if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
+            console.error("Open-Meteo current: unexpected response shape");
+            throw new Error("current shape");
         }
-    })();
-    inflight.set(key, job);
-    return job;
+        const c = data.current;
+        const info = getWeatherInfo(c.weather_code ?? 0);
+        const result = {
+            temperature: roundOrNull(c.temperature_2m),
+            feelsLike: roundOrNull(c.apparent_temperature),
+            weatherCode: c.weather_code ?? 0,
+            description: info.description,
+            icon: info.icon,
+            windSpeed: roundOrNull(c.wind_speed_10m),
+            windGusts: roundOrNull(c.wind_gusts_10m),
+            isDay: c.is_day === 1,
+            humidity: numOrNull(c.relative_humidity_2m),
+            observedAt: localIsoToEpoch(c.time, data.utc_offset_seconds ?? 0),
+            sunrise: data.daily?.sunrise?.[0]
+                ? parseOpenMeteoLocalTime(data.daily.sunrise[0])
+                : "",
+            sunset: data.daily?.sunset?.[0]
+                ? parseOpenMeteoLocalTime(data.daily.sunset[0])
+                : "",
+        };
+        return result;
+    }, null);
 }
 /** Clear the current-weather cache (test hook / sign-out hygiene). */
 export function clearCurrentCache() {
     cache.clear();
-    inflight.clear();
 }
 //# sourceMappingURL=current.js.map

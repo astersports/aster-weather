@@ -1,25 +1,23 @@
 /**
  * Hourly forecast + per-event weather enrichment.
  *
- * Canonical shape from St. Patrick `server/weather/forecast.ts`, with two
- * genuine improvements merged from the aster-sports build:
- *   1. `&timeformat=unixtime` so hour matching is absolute epoch arithmetic
- *      (DL-13 fix) — the original engine matched against `new Date(localStr)`,
- *      which is parsed in the host timezone and was off by the host's UTC
- *      offset. We also keep the venue UTC offset from the response so the
- *      Morning/Afternoon/Evening strip labels stay venue-local.
- *   2. A per-coordinate cache key + per-key in-flight dedup, so two venues
- *      never share one global cache entry (aster-sports Beta B4 fix).
+ * Canonical shape from St. Patrick `server/weather/forecast.ts`, with the
+ * aster-sports improvements merged (`&timeformat=unixtime` absolute epoch
+ * matching + per-coordinate caching), and the v0.2.0 audit fixes:
+ *   - nullable measurement fields (no fabricated `0` — WX-P1-1),
+ *   - `wind_gusts_10m` in the request + severe-gust threshold (WX-P2-4),
+ *   - `past_days=1` so recent-past events resolve (WX-P2-1),
+ *   - a bounded, stale-on-error shared cache (WX-P2-7 / pattern ε),
+ *   - an `isValidCoord` guard on the event path (WX-P3-7).
  */
-import { FORECAST_DAYS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, } from "./types.js";
-import { coordKey, fetchWithTimeout, isValidCoord } from "./helpers.js";
+import { FORECAST_DAYS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
+import { coordKey, fetchWithTimeout, isValidCoord, numOrNull, roundOrNull, } from "./helpers.js";
+import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
-// Per-coordinate cache + in-flight dedup (Beta B4: never share one venue's
-// forecast with another within the TTL).
-const cache = new Map();
-const inflight = new Map();
+const EMPTY_BUNDLE = { hours: [], utcOffsetSeconds: 0 };
+const cache = new WeatherCache(CACHE_TTL_MS);
 function buildUrl(lat, lon) {
     const params = new URLSearchParams({
         latitude: lat.toString(),
@@ -32,6 +30,7 @@ function buildUrl(lat, lon) {
             "weather_code",
             "cloud_cover",
             "wind_speed_10m",
+            "wind_gusts_10m",
             "is_day",
         ].join(","),
         temperature_unit: "fahrenheit",
@@ -42,70 +41,50 @@ function buildUrl(lat, lon) {
         timezone: "auto",
         // DL-13: absolute epoch seconds, not TZ-naive local strings.
         timeformat: "unixtime",
+        // WX-P2-1: one past day so a just-finished event still finds its hour.
+        past_days: "1",
         forecast_days: FORECAST_DAYS.toString(),
     });
     return `${API_BASE}?${params.toString()}`;
 }
 async function loadHourly(coords, opts = {}) {
     const key = coordKey(coords.lat, coords.lon);
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-        return cached.bundle;
-    }
-    const existing = inflight.get(key);
-    if (existing)
-        return existing;
-    const job = (async () => {
+    return cache.get(key, async () => {
+        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
+        if (!res.ok) {
+            console.error(`Open-Meteo hourly: HTTP ${res.status}`);
+            throw new Error(`hourly HTTP ${res.status}`);
+        }
+        let data;
         try {
-            const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-            if (!res.ok) {
-                console.error(`Open-Meteo hourly: HTTP ${res.status}`);
-                return cached?.bundle ?? { hours: [], utcOffsetSeconds: 0 };
-            }
-            let data;
-            try {
-                data = (await res.json());
-            }
-            catch {
-                console.error("Open-Meteo hourly: failed to parse JSON");
-                return cached?.bundle ?? { hours: [], utcOffsetSeconds: 0 };
-            }
-            const h = data.hourly;
-            if (!h || !Array.isArray(h.time)) {
-                console.error("Open-Meteo hourly: unexpected response shape");
-                return cached?.bundle ?? { hours: [], utcOffsetSeconds: 0 };
-            }
-            const hours = h.time.map((unixSec, i) => ({
-                timestamp: unixSec * 1000,
-                temperature: Math.round(h.temperature_2m?.[i] ?? 0),
-                apparentTemperature: Math.round(h.apparent_temperature?.[i] ?? 0),
-                precipitationProbability: h.precipitation_probability?.[i] ?? 0,
-                precipitation: h.precipitation?.[i] ?? 0,
-                weatherCode: h.weather_code?.[i] ?? 0,
-                cloudCover: h.cloud_cover?.[i] ?? 0,
-                windSpeed: Math.round(h.wind_speed_10m?.[i] ?? 0),
-                isDay: h.is_day?.[i] === 1,
-            }));
-            const bundle = {
-                hours,
-                utcOffsetSeconds: data.utc_offset_seconds ?? 0,
-            };
-            cache.set(key, { bundle, fetchedAt: Date.now() });
-            return bundle;
+            data = (await res.json());
         }
-        catch (error) {
-            console.error("Weather fetch error:", error);
-            return cached?.bundle ?? { hours: [], utcOffsetSeconds: 0 };
+        catch {
+            console.error("Open-Meteo hourly: failed to parse JSON");
+            throw new Error("hourly parse");
         }
-        finally {
-            inflight.delete(key);
+        const h = data.hourly;
+        if (!h || !Array.isArray(h.time)) {
+            console.error("Open-Meteo hourly: unexpected response shape");
+            throw new Error("hourly shape");
         }
-    })();
-    inflight.set(key, job);
-    return job;
+        const hours = h.time.map((unixSec, i) => ({
+            timestamp: unixSec * 1000,
+            temperature: roundOrNull(h.temperature_2m?.[i]),
+            apparentTemperature: roundOrNull(h.apparent_temperature?.[i]),
+            precipitationProbability: numOrNull(h.precipitation_probability?.[i]),
+            precipitation: numOrNull(h.precipitation?.[i]),
+            weatherCode: h.weather_code?.[i] ?? 0,
+            cloudCover: numOrNull(h.cloud_cover?.[i]),
+            windSpeed: roundOrNull(h.wind_speed_10m?.[i]),
+            windGusts: roundOrNull(h.wind_gusts_10m?.[i]),
+            isDay: h.is_day?.[i] === 1,
+        }));
+        return { hours, utcOffsetSeconds: data.utc_offset_seconds ?? 0 };
+    }, EMPTY_BUNDLE);
 }
 /**
- * Fetch the 7-day hourly forecast for a coordinate. Cached for 60 min per
+ * Fetch the multi-day hourly forecast for a coordinate. Cached for 60 min per
  * rounded coordinate, with in-flight dedup. Returns `[]` on failure (never
  * throws, never fabricates) — falls back to stale cache when available.
  */
@@ -155,8 +134,12 @@ function stripLabel(timestamp, utcOffsetSeconds) {
  * Enrich a single event start time into an {@link EventWeather}. Returns null
  * when the event is outside the forecast horizon (>7 days out, or >1 day past)
  * or the nearest hour is >6h away. From St. Patrick `getWeatherForEvent`.
+ * Warning flags treat a `null` reading as "unknown" — they never fire off a
+ * fabricated value (WX-P1-1).
  */
 export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
+    if (!isValidCoord(coords.lat, coords.lon))
+        return null;
     const eventTime = new Date(eventStartISO).getTime();
     if (Number.isNaN(eventTime))
         return null;
@@ -182,27 +165,31 @@ export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
         weatherCode: f.weatherCode,
         icon: getWeatherInfo(f.weatherCode).icon,
     }));
+    const rain = closest.precipitationProbability;
+    const temp = closest.temperature;
+    const wind = closest.windSpeed;
+    const gust = closest.windGusts;
     return {
-        temperature: closest.temperature,
+        temperature: temp,
         feelsLike: closest.apparentTemperature,
-        precipProbability: closest.precipitationProbability,
+        precipProbability: rain,
         precipAmount: closest.precipitation,
         weatherCode: closest.weatherCode,
         description: info.description,
         icon: info.icon,
-        windSpeed: closest.windSpeed,
+        windSpeed: wind,
+        windGusts: gust,
         isDay: closest.isDay,
-        isRainWarning: closest.precipitationProbability > 40,
-        isSevereWarning: closest.precipitationProbability > 70 ||
-            closest.temperature < 20 ||
-            closest.temperature > 100 ||
-            closest.windSpeed > 40,
+        isRainWarning: rain !== null && rain > 40,
+        isSevereWarning: (rain !== null && rain > 70) ||
+            (temp !== null && (temp < 20 || temp > 100)) ||
+            (wind !== null && wind > SEVERE_WIND_MPH) ||
+            (gust !== null && gust > SEVERE_GUST_MPH),
         forecastStrip,
     };
 }
 /** Clear the in-memory forecast cache (test hook / consumer sign-out hygiene). */
 export function clearForecastCache() {
     cache.clear();
-    inflight.clear();
 }
 //# sourceMappingURL=forecast.js.map

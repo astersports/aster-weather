@@ -7,12 +7,14 @@
  *
  * React SVG icons ship from the `@aster/weather/icons` subpath.
  */
-export { FORECAST_DAYS, FETCH_TIMEOUT_MS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, DEFAULT_FORECAST_WINDOW_DAYS, } from "./types.js";
+export { FORECAST_DAYS, FETCH_TIMEOUT_MS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, DEFAULT_FORECAST_WINDOW_DAYS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
 export { WMO_CODES, getWeatherInfo, WMO_EMOJI, emojiForCode, WMO_LABELS, labelForCode, rainWord, } from "./wmo.js";
-// Helpers
-export { parseOpenMeteoLocalTime, coordKey, isValidCoord, fetchWithTimeout, } from "./helpers.js";
+// Public helpers (coordKey + fetchWithTimeout are internal — not exported)
+export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
 // Hourly forecast + event enrichment + matcher
 export { fetchForecast, getWeatherForTime, getWeatherForEvent, clearForecastCache, } from "./forecast.js";
+// 15-minute precipitation nowcast
+export { getNowcast, clearNowcastCache } from "./nowcast.js";
 // Current conditions
 export { getCurrentWeather, clearCurrentCache } from "./current.js";
 // Daily forecast
