@@ -17,7 +17,7 @@ import {
 import {
   bindOnError,
   coordKey,
-  fetchWithTimeout,
+  fetchJsonWithTimeout,
   isValidCoord,
   numOrNull,
   RESILIENT_CACHE,
@@ -70,21 +70,12 @@ export async function getNowcast(
   return cache.get(
     key,
     async () => {
-      const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-      if (!res.ok) {
-        console.error(`Open-Meteo nowcast: HTTP ${res.status}`);
-        throw new Error(`nowcast HTTP ${res.status}`);
-      }
-      let data: OpenMeteoMinutely;
-      try {
-        data = (await res.json()) as OpenMeteoMinutely;
-      } catch {
-        console.error("Open-Meteo nowcast: failed to parse JSON");
-        throw new Error("nowcast parse");
-      }
+      const data = (await fetchJsonWithTimeout(
+        buildUrl(coords.lat, coords.lon),
+        opts,
+      )) as OpenMeteoMinutely;
       const m = data.minutely_15;
       if (!m || !Array.isArray(m.time)) {
-        console.error("Open-Meteo nowcast: unexpected response shape");
         throw new Error("nowcast shape");
       }
       return m.time.map((unixSec, i) => ({

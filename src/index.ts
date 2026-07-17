@@ -47,7 +47,7 @@ export {
   rainWord,
 } from "./wmo.js";
 
-// Public helpers (coordKey + fetchWithTimeout are internal — not exported)
+// Public helpers (coordKey + fetchJsonWithTimeout are internal — not exported)
 export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
 
 // Hourly forecast + event enrichment + matcher

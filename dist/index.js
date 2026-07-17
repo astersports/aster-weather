@@ -9,7 +9,7 @@
  */
 export { FORECAST_DAYS, FETCH_TIMEOUT_MS, FETCH_RETRY_COUNT, FETCH_RETRY_BACKOFF_MS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, DEFAULT_FORECAST_WINDOW_DAYS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
 export { WMO_CODES, getWeatherInfo, WMO_EMOJI, emojiForCode, WMO_LABELS, labelForCode, rainWord, } from "./wmo.js";
-// Public helpers (coordKey + fetchWithTimeout are internal — not exported)
+// Public helpers (coordKey + fetchJsonWithTimeout are internal — not exported)
 export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
 // Hourly forecast + event enrichment + matcher
 export { fetchForecast, getWeatherForTime, getWeatherForEvent, clearForecastCache, } from "./forecast.js";

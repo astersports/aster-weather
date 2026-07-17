@@ -25,7 +25,7 @@ import {
 import {
   bindOnError,
   coordKey,
-  fetchWithTimeout,
+  fetchJsonWithTimeout,
   isValidCoord,
   numOrNull,
   RESILIENT_CACHE,
@@ -103,21 +103,12 @@ async function loadHourly(
   return cache.get(
     key,
     async () => {
-      const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-      if (!res.ok) {
-        console.error(`Open-Meteo hourly: HTTP ${res.status}`);
-        throw new Error(`hourly HTTP ${res.status}`);
-      }
-      let data: OpenMeteoHourly;
-      try {
-        data = (await res.json()) as OpenMeteoHourly;
-      } catch {
-        console.error("Open-Meteo hourly: failed to parse JSON");
-        throw new Error("hourly parse");
-      }
+      const data = (await fetchJsonWithTimeout(
+        buildUrl(coords.lat, coords.lon),
+        opts,
+      )) as OpenMeteoHourly;
       const h = data.hourly;
       if (!h || !Array.isArray(h.time)) {
-        console.error("Open-Meteo hourly: unexpected response shape");
         throw new Error("hourly shape");
       }
       const hours: HourlyForecast[] = h.time.map((unixSec, i) => ({

@@ -8,7 +8,7 @@
  * Per-coord cached for 10 min (shorter than hourly — nowcast is the freshest
  * signal), with in-flight dedup + stale-on-error, via the shared cache.
  */
-import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, } from "./helpers.js";
+import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
@@ -37,22 +37,9 @@ export async function getNowcast(coords, opts = {}) {
         return [];
     const key = coordKey(coords.lat, coords.lon);
     return cache.get(key, async () => {
-        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-        if (!res.ok) {
-            console.error(`Open-Meteo nowcast: HTTP ${res.status}`);
-            throw new Error(`nowcast HTTP ${res.status}`);
-        }
-        let data;
-        try {
-            data = (await res.json());
-        }
-        catch {
-            console.error("Open-Meteo nowcast: failed to parse JSON");
-            throw new Error("nowcast parse");
-        }
+        const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const m = data.minutely_15;
         if (!m || !Array.isArray(m.time)) {
-            console.error("Open-Meteo nowcast: unexpected response shape");
             throw new Error("nowcast shape");
         }
         return m.time.map((unixSec, i) => ({

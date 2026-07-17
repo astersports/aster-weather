@@ -11,7 +11,7 @@
  *   - an `isValidCoord` guard on the event path (WX-P3-7).
  */
 import { FORECAST_DAYS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
-import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
@@ -50,22 +50,9 @@ function buildUrl(lat, lon) {
 async function loadHourly(coords, opts = {}) {
     const key = coordKey(coords.lat, coords.lon);
     return cache.get(key, async () => {
-        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-        if (!res.ok) {
-            console.error(`Open-Meteo hourly: HTTP ${res.status}`);
-            throw new Error(`hourly HTTP ${res.status}`);
-        }
-        let data;
-        try {
-            data = (await res.json());
-        }
-        catch {
-            console.error("Open-Meteo hourly: failed to parse JSON");
-            throw new Error("hourly parse");
-        }
+        const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const h = data.hourly;
         if (!h || !Array.isArray(h.time)) {
-            console.error("Open-Meteo hourly: unexpected response shape");
             throw new Error("hourly shape");
         }
         const hours = h.time.map((unixSec, i) => ({

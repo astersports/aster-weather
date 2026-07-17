@@ -5,7 +5,7 @@
  * and (v0.2.0) nullable readings via the shared cache (WX-P1-1 / WX-P2-7).
  */
 import { FORECAST_DAYS, } from "./types.js";
-import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
@@ -37,22 +37,9 @@ export async function getDailyForecast(coords, opts = {}) {
         return [];
     const key = coordKey(coords.lat, coords.lon);
     return cache.get(key, async () => {
-        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-        if (!res.ok) {
-            console.error(`Open-Meteo daily: HTTP ${res.status}`);
-            throw new Error(`daily HTTP ${res.status}`);
-        }
-        let data;
-        try {
-            data = (await res.json());
-        }
-        catch {
-            console.error("Open-Meteo daily: failed to parse JSON");
-            throw new Error("daily parse");
-        }
+        const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const d = data.daily;
         if (!d || !Array.isArray(d.time)) {
-            console.error("Open-Meteo daily: unexpected response shape");
             throw new Error("daily shape");
         }
         const forecasts = d.time.map((date, i) => {
