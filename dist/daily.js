@@ -40,7 +40,6 @@ export async function getDailyForecast(coords, opts = {}) {
         const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const d = data.daily;
         if (!d || !Array.isArray(d.time)) {
-            console.error("Open-Meteo daily: unexpected response shape");
             throw new Error("daily shape");
         }
         const forecasts = d.time.map((date, i) => {

@@ -109,7 +109,6 @@ async function loadHourly(
       )) as OpenMeteoHourly;
       const h = data.hourly;
       if (!h || !Array.isArray(h.time)) {
-        console.error("Open-Meteo hourly: unexpected response shape");
         throw new Error("hourly shape");
       }
       const hours: HourlyForecast[] = h.time.map((unixSec, i) => ({

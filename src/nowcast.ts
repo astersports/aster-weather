@@ -76,7 +76,6 @@ export async function getNowcast(
       )) as OpenMeteoMinutely;
       const m = data.minutely_15;
       if (!m || !Array.isArray(m.time)) {
-        console.error("Open-Meteo nowcast: unexpected response shape");
         throw new Error("nowcast shape");
       }
       return m.time.map((unixSec, i) => ({

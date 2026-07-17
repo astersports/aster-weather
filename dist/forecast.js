@@ -53,7 +53,6 @@ async function loadHourly(coords, opts = {}) {
         const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const h = data.hourly;
         if (!h || !Array.isArray(h.time)) {
-            console.error("Open-Meteo hourly: unexpected response shape");
             throw new Error("hourly shape");
         }
         const hours = h.time.map((unixSec, i) => ({

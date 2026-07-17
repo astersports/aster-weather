@@ -40,7 +40,6 @@ export async function getNowcast(coords, opts = {}) {
         const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         const m = data.minutely_15;
         if (!m || !Array.isArray(m.time)) {
-            console.error("Open-Meteo nowcast: unexpected response shape");
             throw new Error("nowcast shape");
         }
         return m.time.map((unixSec, i) => ({

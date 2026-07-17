@@ -86,7 +86,6 @@ export async function getCurrentWeather(
         opts,
       )) as OpenMeteoCurrent;
       if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
-        console.error("Open-Meteo current: unexpected response shape");
         throw new Error("current shape");
       }
       const c = data.current;

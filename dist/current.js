@@ -42,7 +42,6 @@ export async function getCurrentWeather(coords, opts = {}) {
     return cache.get(key, async () => {
         const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
-            console.error("Open-Meteo current: unexpected response shape");
             throw new Error("current shape");
         }
         const c = data.current;

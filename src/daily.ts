@@ -84,7 +84,6 @@ export async function getDailyForecast(
       )) as OpenMeteoDaily;
       const d = data.daily;
       if (!d || !Array.isArray(d.time)) {
-        console.error("Open-Meteo daily: unexpected response shape");
         throw new Error("daily shape");
       }
       const forecasts: DailyForecast[] = d.time.map((date, i) => {
