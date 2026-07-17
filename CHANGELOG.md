@@ -7,6 +7,40 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.5.1 — 2026-07-17
+
+Behavior-preserving fixes (no API or shape change → **patch**). Cut ahead of the
+fleet convergence so every consumer inherits both silently on bump.
+
+### Fixed
+- **WX-R2 — the `res.json()` body read now runs INSIDE the fetch timeout/abort
+  budget.** `fetchWithTimeout` (v0.2.0 / WX-P2-16) armed the abort+race for the
+  *headers* read, but the *body* read (`res.json()`) then ran in the loader with
+  the timer already cleared — so a server that sent headers then stalled the body
+  hung `json()` forever, and because the loader runs inside `WeatherCache`'s
+  in-flight dedup, every concurrent caller for that coordinate hung with it (the
+  M5 retry never fired; the attempt never rejected). The fetch, HTTP-ok check, and
+  JSON parse are now centralized in one internal `fetchJsonWithTimeout` that races
+  the WHOLE chain against a single deadline, so the total budget stays
+  `<= timeoutMs` on both the well-behaved-impl path (abort frees the socket, on
+  headers OR body) and the misbehaving-impl path (the race rejects regardless).
+  New `resilience.test.ts` case: a stalled body (headers OK, `json()` never
+  resolves) settles by `timeoutMs` → `[]` and fires `onError` exactly once. The
+  changed surface (`fetchWithTimeout` → `fetchJsonWithTimeout`) is internal /
+  un-exported (WX-P2-13) — no public API or shape moves.
+
+### Changed (log hygiene)
+- **WX-R4 — removed the unconditional `console.error` from all four loaders.**
+  `onError` (v0.5.0 / M1) is the failure channel; the raw `console.error` lines
+  gave consumers double signal and could not be silenced. Deleted (the HTTP/parse
+  ones were subsumed by the WX-R2 centralization; the shape-guard ones removed
+  outright). Zero change to the never-throw return contract.
+
+### Docs
+- README + CHANGELOG install pin bumped to `#v0.5.1`. Retired the stale
+  "pin `v0.2.0`" advice in the historical 0.1.0 entry below — it predated the
+  full tag ladder; the current floor is `#v0.5.1`.
+
 ## 0.5.0 — 2026-07-16
 
 Observability core (Wave B, roadmap `docs/WEATHER_E2E_EFFICIENCY_AND_ENHANCEMENTS_2026-07-16.md`).
@@ -156,4 +190,5 @@ set + correctness + pipeline hardening.
 
 Initial shared extraction — Open-Meteo core + WMO map + colorful SVG icons.
 See `DERIVATION.md`. (Note: the `v0.1.0` tag sits on the scaffold commit,
-predating the polish arc; new consumers should pin `v0.2.0`.)
+predating the polish arc; new consumers pin the current release (`#v0.5.1`), never
+the scaffold `v0.1.0`.)

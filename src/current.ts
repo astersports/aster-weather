@@ -10,7 +10,7 @@ import { type Coords, type CurrentWeather, type FetchOptions } from "./types.js"
 import {
   bindOnError,
   coordKey,
-  fetchWithTimeout,
+  fetchJsonWithTimeout,
   isValidCoord,
   localIsoToEpoch,
   numOrNull,
@@ -81,18 +81,10 @@ export async function getCurrentWeather(
   return cache.get(
     key,
     async () => {
-      const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-      if (!res.ok) {
-        console.error(`Open-Meteo current: HTTP ${res.status}`);
-        throw new Error(`current HTTP ${res.status}`);
-      }
-      let data: OpenMeteoCurrent;
-      try {
-        data = (await res.json()) as OpenMeteoCurrent;
-      } catch {
-        console.error("Open-Meteo current: failed to parse JSON");
-        throw new Error("current parse");
-      }
+      const data = (await fetchJsonWithTimeout(
+        buildUrl(coords.lat, coords.lon),
+        opts,
+      )) as OpenMeteoCurrent;
       if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
         console.error("Open-Meteo current: unexpected response shape");
         throw new Error("current shape");

@@ -170,6 +170,29 @@ describe("WX-P2-16/23 — timeout aborts, passes a signal, never hangs", () => {
     const hours = await fetchForecast(COORDS, { fetchImpl: impl, timeoutMs: 10 });
     expect(hours).toEqual([]);
   });
+  it("WX-R2 — a STALLED BODY (headers OK, json() never resolves) still times out → [] + onError once", async () => {
+    // The WX-R2 hang: the impl returns headers immediately (ok:true) but the
+    // body read never settles. Pre-fix, res.json() ran AFTER the timer cleared,
+    // so it hung forever — and via the shared in-flight dedup, every concurrent
+    // caller for the coord hung with it. The fix races json() under the same
+    // single deadline, so the loader settles by timeoutMs → stale/empty. This
+    // exercises the centralized fetchJsonWithTimeout (all four loaders inherit it).
+    const onError = vi.fn();
+    const impl: FetchImpl = async () => ({
+      ok: true,
+      status: 200,
+      json: () => new Promise<unknown>(() => {}), // body never resolves
+    });
+    const start = Date.now();
+    const hours = await fetchForecast(COORDS, {
+      fetchImpl: impl,
+      timeoutMs: 20,
+      onError,
+    });
+    expect(hours).toEqual([]); // settled to empty, did NOT hang
+    expect(Date.now() - start).toBeLessThan(3000); // bounded by timeout+one retry, not infinite
+    expect(onError).toHaveBeenCalledTimes(1); // exactly one signal after retries exhausted
+  });
 });
 
 describe("WX-P2-20 — venue-local strip label uses the UTC offset (DL-13 lock)", () => {

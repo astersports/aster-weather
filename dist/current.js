@@ -5,7 +5,7 @@
  * dedup, accepting an injected fetch, and (v0.2.0) nullable readings +
  * `wind_gusts_10m` + an `observedAt` data-age timestamp (WX-P1-1/P2-4/P2-5).
  */
-import { bindOnError, coordKey, fetchWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
+import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
 import { getWeatherInfo } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
@@ -40,19 +40,7 @@ export async function getCurrentWeather(coords, opts = {}) {
         return null;
     const key = coordKey(coords.lat, coords.lon);
     return cache.get(key, async () => {
-        const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-        if (!res.ok) {
-            console.error(`Open-Meteo current: HTTP ${res.status}`);
-            throw new Error(`current HTTP ${res.status}`);
-        }
-        let data;
-        try {
-            data = (await res.json());
-        }
-        catch {
-            console.error("Open-Meteo current: failed to parse JSON");
-            throw new Error("current parse");
-        }
+        const data = (await fetchJsonWithTimeout(buildUrl(coords.lat, coords.lon), opts));
         if (data?.current?.temperature_2m === undefined || !data?.daily?.sunrise) {
             console.error("Open-Meteo current: unexpected response shape");
             throw new Error("current shape");

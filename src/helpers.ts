@@ -108,61 +108,57 @@ export function roundOrNull(v: number | null | undefined): number | null {
   return n === null ? null : Math.round(n);
 }
 
-interface MinimalResponse {
-  ok: boolean;
-  status: number;
-  json: () => Promise<unknown>;
-}
-
 /**
- * Fetch with an abort timeout. Uses the injected `fetchImpl` when provided
- * (SSRF boundary / test stub); otherwise the global `fetch`. From St. Patrick
- * `fetchWithTimeout`, generalized to accept an injected implementation.
+ * Fetch a URL AND parse its JSON body under ONE abort/timeout budget that spans
+ * BOTH the headers read and the body read (WX-R2 — extends WX-P2-16 to `json()`).
  *
- * v0.2.0 (WX-P2-16): a single `AbortController` drives BOTH paths, and the
- * injected `fetchImpl` now receives `{ signal }` — so on timeout the underlying
- * request is actually aborted (no more leaked socket per timed-out injected
- * call). We ALSO race against the timeout: a well-behaved impl aborts and frees
- * its socket, while a misbehaving impl that ignores the signal still can't hang
- * the caller — the race rejects regardless. Best of both.
+ * v0.2.0 (WX-P2-16) armed the abort+race for the headers read, but the body
+ * (`res.json()`) then ran in the loader with the timer already cleared — a server
+ * that sent headers and stalled the body hung `json()` forever, and because the
+ * loader runs inside `WeatherCache`'s in-flight dedup, every concurrent caller for
+ * that coordinate hung with it (retry never fired; the attempt never rejected).
+ * This helper keeps the single `AbortController` armed and races the WHOLE
+ * fetch → ok-check → json chain against one deadline, so the total budget stays
+ * `<= timeoutMs` on BOTH paths: a well-behaved impl aborts and frees its socket
+ * (on the headers OR the body read), and a misbehaving impl that ignores the
+ * signal still can't hang the caller — the race rejects regardless.
+ *
+ * Internal / un-exported (WX-P2-13). Throws on timeout, HTTP `!ok`, or a parse
+ * failure; the caller's shape guard validates the parsed value, and the cache
+ * turns any throw into stale-or-empty + a single `onError`.
  */
-export async function fetchWithTimeout(
+export async function fetchJsonWithTimeout(
   url: string,
   opts: FetchOptions = {},
-): Promise<MinimalResponse> {
+): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
   const controller = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
-      controller.abort(); // free a well-behaved impl's socket
+      controller.abort(); // free a well-behaved impl's socket (headers OR body)
       reject(new Error(`fetch timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
-  try {
-    if (opts.fetchImpl) {
-      // Injected impl owns SSRF semantics; it gets the signal so a timeout
-      // aborts its in-flight request. The race guarantees the caller settles
-      // even if the impl ignores the signal.
-      return await Promise.race([
-        opts.fetchImpl(url, { signal: controller.signal }),
-        timeout,
-      ]);
-    }
+  // Injected impl owns SSRF semantics; it gets the signal so a timeout aborts its
+  // in-flight request. The race guarantees the caller settles even if the impl
+  // ignores the signal — on the headers read AND the body read.
+  const fetchAndParse = async (): Promise<unknown> => {
+    const impl: FetchImpl | undefined =
+      opts.fetchImpl ??
+      (typeof fetch !== "undefined"
+        ? (fetch as unknown as FetchImpl)
+        : undefined);
+    if (!impl) throw new Error("No fetch implementation available");
+    const res = await impl(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // The body read is INSIDE the race now — a stalled body can't outlive the deadline.
+    return await res.json();
+  };
 
-    const globalFetch: FetchImpl | undefined =
-      typeof fetch !== "undefined" ? (fetch as unknown as FetchImpl) : undefined;
-    if (!globalFetch) {
-      throw new Error("No fetch implementation available");
-    }
-    return await Promise.race([
-      (fetch as unknown as (
-        u: string,
-        init: { signal: AbortSignal },
-      ) => Promise<MinimalResponse>)(url, { signal: controller.signal }),
-      timeout,
-    ]);
+  try {
+    return await Promise.race([fetchAndParse(), timeout]);
   } finally {
     clearTimeout(timeoutId!);
   }

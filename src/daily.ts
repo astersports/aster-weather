@@ -14,7 +14,7 @@ import {
 import {
   bindOnError,
   coordKey,
-  fetchWithTimeout,
+  fetchJsonWithTimeout,
   isValidCoord,
   numOrNull,
   parseOpenMeteoLocalTime,
@@ -78,18 +78,10 @@ export async function getDailyForecast(
   return cache.get(
     key,
     async () => {
-      const res = await fetchWithTimeout(buildUrl(coords.lat, coords.lon), opts);
-      if (!res.ok) {
-        console.error(`Open-Meteo daily: HTTP ${res.status}`);
-        throw new Error(`daily HTTP ${res.status}`);
-      }
-      let data: OpenMeteoDaily;
-      try {
-        data = (await res.json()) as OpenMeteoDaily;
-      } catch {
-        console.error("Open-Meteo daily: failed to parse JSON");
-        throw new Error("daily parse");
-      }
+      const data = (await fetchJsonWithTimeout(
+        buildUrl(coords.lat, coords.lon),
+        opts,
+      )) as OpenMeteoDaily;
       const d = data.daily;
       if (!d || !Array.isArray(d.time)) {
         console.error("Open-Meteo daily: unexpected response shape");
