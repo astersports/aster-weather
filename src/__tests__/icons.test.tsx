@@ -1,105 +1,132 @@
 // @vitest-environment happy-dom
 /**
- * Icon-layer tests (WX-P2-19 + WX-P2-22).
- *
- * Uses react-dom/server `renderToStaticMarkup` — no full DOM needed. Effects do
- * not run under SSR, so `usePrefersReducedMotion` returns its SSR default
- * (reduced = true): the static art renders with ZERO animation nodes, which is
- * the intended baseline for these assertions.
+ * Sky icon-system tests. Uses react-dom/server `renderToStaticMarkup` — effects
+ * (the stylesheet injection) do not run under SSR, which is the intended static
+ * baseline. Motion is expressed as `aw-*` classes in the markup and driven by the
+ * injected stylesheet at runtime; `prefers-reduced-motion` disables it in CSS.
  */
 
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ColorfulWeatherIcon, ROUTED_ICON_KEYS, SunnyIcon } from "../icons/index.js";
+import {
+  WeatherIcon, SkyPanel, SKY_TINTS, SKY_CONDITIONS, ROUTED_ICON_KEYS, WEATHER_ART, skyConditionFor,
+} from "../icons/index.js";
 import { WMO_CODES } from "../wmo.js";
 import type { WeatherIconKey } from "../types.js";
 
-// Explicit list of every union member. A union change that is not mirrored
-// here is a compile error via the exhaustiveness check below.
-const ALL_KEYS: WeatherIconKey[] = [
-  "clear",
-  "mostly-clear",
-  "partly-cloudy",
-  "overcast",
-  "fog",
-  "drizzle",
-  "light-rain",
-  "rain",
-  "freezing-rain",
-  "heavy-rain",
-  "light-snow",
-  "snow",
-  "heavy-snow",
-  "thunderstorm",
+const WMO_KEYS: WeatherIconKey[] = [
+  "clear", "mostly-clear", "partly-cloudy", "overcast", "fog", "drizzle", "light-rain",
+  "rain", "freezing-rain", "heavy-rain", "light-snow", "snow", "heavy-snow", "thunderstorm",
 ];
 
-describe("ColorfulWeatherIcon dispatch", () => {
-  it("renders a non-empty <svg> for every icon key, day and night, without throwing", () => {
-    for (const icon of ALL_KEYS) {
+describe("WeatherIcon — render", () => {
+  it("renders a non-empty 64-viewBox <svg> for every WMO key, day and night", () => {
+    for (const condition of WMO_KEYS) {
       for (const isDay of [true, false]) {
-        const html = renderToStaticMarkup(
-          <ColorfulWeatherIcon icon={icon} isDay={isDay} />,
-        );
-        expect(html, `${icon} isDay=${isDay}`).toContain("<svg");
-        expect(html.length).toBeGreaterThan(20);
+        const html = renderToStaticMarkup(<WeatherIcon condition={condition} isDay={isDay} />);
+        expect(html, `${condition} isDay=${isDay}`).toContain("<svg");
+        expect(html).toContain('viewBox="0 0 64 64"');
+        expect(html.length).toBeGreaterThan(60);
       }
     }
   });
-
-  it("routes an unknown key to the neutral fallback (no throw, still an svg)", () => {
-    const html = renderToStaticMarkup(<ColorfulWeatherIcon icon="totally-bogus" />);
-    expect(html).toContain("<svg");
+  it("fills its container — no pixel size (spec §4)", () => {
+    const html = renderToStaticMarkup(<WeatherIcon condition="rain" />);
+    expect(html).toMatch(/width:\s*100%/);
+    expect(html).toMatch(/height:\s*100%/);
+    expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
   });
 });
 
-describe("WX-P2-22 — WMO map ↔ dispatcher parity (AP #43)", () => {
-  it("every icon key the WMO map emits has an explicit dispatcher case", () => {
-    const wmoKeys = new Set(Object.values(WMO_CODES).map((w) => w.icon));
-    for (const key of wmoKeys) {
-      expect(ROUTED_ICON_KEYS.has(key), `unrouted WMO icon key: ${key}`).toBe(true);
+describe("vocabulary — all 17, nothing collapses (conformance line 2)", () => {
+  it("every SkyCondition has art AND a tint; exactly 17 of each", () => {
+    for (const c of SKY_CONDITIONS) {
+      expect(WEATHER_ART[c], `art ${c}`).toBeTypeOf("function");
+      expect(SKY_TINTS[c], `tint ${c}`).toBeTruthy();
     }
+    expect(SKY_CONDITIONS.length).toBe(17);
+    expect(Object.keys(WEATHER_ART).length).toBe(17);
+    expect(Object.keys(SKY_TINTS).length).toBe(17);
   });
-
-  it("the explicit union list matches ROUTED_ICON_KEYS exactly", () => {
-    expect(new Set(ALL_KEYS)).toEqual(new Set(ROUTED_ICON_KEYS));
+  it("night variants carry distinct, darker tints than their day key", () => {
+    expect(SKY_TINTS["clear-night"]).not.toEqual(SKY_TINTS["clear"]);
+    expect(SKY_TINTS["partly-cloudy-night"]).not.toEqual(SKY_TINTS["partly-cloudy"]);
+    expect(SKY_TINTS["snow-night"]).not.toEqual(SKY_TINTS["snow"]);
   });
 });
 
-describe("WX-P3-9 — per-instance gradient ids", () => {
-  it("two instances of the same icon emit different gradient ids", () => {
+describe("WX-P2-22 — WMO map ↔ routed-key parity (AP #43)", () => {
+  it("every icon key the WMO map emits is a routed key", () => {
+    const wmoKeys = new Set(Object.values(WMO_CODES).map((w) => w.icon));
+    for (const k of wmoKeys) expect(ROUTED_ICON_KEYS.has(k), `unrouted: ${k}`).toBe(true);
+  });
+  it("routed keys match the 14 WMO union exactly", () => {
+    expect(new Set(ROUTED_ICON_KEYS)).toEqual(new Set(WMO_KEYS));
+  });
+});
+
+describe("skyConditionFor — night resolution", () => {
+  it("passes day keys through unchanged", () => {
+    for (const k of WMO_KEYS) expect(skyConditionFor(k, true)).toBe(k);
+  });
+  it("maps clear/partly/snow to night variants; leaves the rest", () => {
+    expect(skyConditionFor("clear", false)).toBe("clear-night");
+    expect(skyConditionFor("mostly-clear", false)).toBe("clear-night");
+    expect(skyConditionFor("partly-cloudy", false)).toBe("partly-cloudy-night");
+    expect(skyConditionFor("snow", false)).toBe("snow-night");
+    expect(skyConditionFor("heavy-snow", false)).toBe("snow-night");
+    expect(skyConditionFor("rain", false)).toBe("rain");
+    expect(skyConditionFor("thunderstorm", false)).toBe("thunderstorm");
+  });
+});
+
+describe("WX-P3-9 — per-instance ids", () => {
+  it("two icons of the same condition emit different gradient ids", () => {
     const html = renderToStaticMarkup(
       <>
-        <SunnyIcon />
-        <SunnyIcon />
+        <WeatherIcon condition="clear" />
+        <WeatherIcon condition="clear" />
       </>,
     );
-    const ids = [...html.matchAll(/id="([^"]*-sunGrad)"/g)].map((m) => m[1]);
-    expect(ids).toHaveLength(2);
+    const ids = [...html.matchAll(/id="sd([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBe(2);
     expect(ids[0]).not.toBe(ids[1]);
   });
 });
 
-describe("WX-P2-8 — accessibility semantics", () => {
-  it("a decorative icon is hidden from the a11y tree", () => {
-    const html = renderToStaticMarkup(<ColorfulWeatherIcon icon="rain" />);
+describe("accessibility", () => {
+  it("decorative by default (aria-hidden, no role)", () => {
+    const html = renderToStaticMarkup(<WeatherIcon condition="rain" />);
     expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain('focusable="false"');
     expect(html).not.toContain('role="img"');
   });
-
-  it("a non-decorative icon exposes role/aria-label + <title>", () => {
-    const html = renderToStaticMarkup(
-      <ColorfulWeatherIcon icon="rain" decorative={false} label="Rainy" />,
-    );
+  it("title exposes role=img + aria-label + <title>", () => {
+    const html = renderToStaticMarkup(<WeatherIcon condition="rain" title="Rainy" />);
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Rainy"');
     expect(html).toContain("<title>Rainy</title>");
   });
+});
 
-  it("falls back to a humanized key when no label is given", () => {
-    const html = renderToStaticMarkup(
-      <ColorfulWeatherIcon icon="partly-cloudy" decorative={false} />,
-    );
-    expect(html).toContain('aria-label="Partly cloudy"');
+describe("motion gating (R-1 — on by default)", () => {
+  it("animates by default", () => {
+    expect(renderToStaticMarkup(<WeatherIcon condition="rain" />)).toMatch(/class="aw-/);
+  });
+  it("animate={false} emits no aw-* motion classes", () => {
+    const html = renderToStaticMarkup(<WeatherIcon condition="thunderstorm" animate={false} />);
+    expect(html).not.toMatch(/aw-drift|aw-fall|aw-corona|aw-tumble|aw-flash|aw-bloom|aw-twinkle|aw-slide/);
+  });
+});
+
+describe("SkyPanel — the enforcing surface", () => {
+  it("paints the condition gradient down to the floor tint", () => {
+    const html = renderToStaticMarkup(<SkyPanel condition="clear"><span /></SkyPanel>);
+    expect(html).toContain("linear-gradient(168deg");
+    expect(html).toContain("#2E5A8C"); // clear's darker stop == the floor
+  });
+  it("thunderstorm + heavy-rain carry the flash overlay; calm skies don't", () => {
+    expect(renderToStaticMarkup(<SkyPanel condition="thunderstorm"><i /></SkyPanel>)).toContain("aw-skyflash");
+    expect(renderToStaticMarkup(<SkyPanel condition="heavy-rain"><i /></SkyPanel>)).toContain("aw-skyflash");
+    expect(renderToStaticMarkup(<SkyPanel condition="clear"><i /></SkyPanel>)).not.toContain("aw-skyflash");
   });
 });

@@ -7,6 +7,49 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.6.0 — 2026-07-18
+
+**The "Sky" icon system.** A full replacement of the React SVG weather icons:
+weather now renders inside a **panel of sky** tinted to the condition, and the
+icon is glossy + dimensional (volumetric clouds, corona sun, crescent moon with
+stars, teardrops with a specular hit, six-fold crystals, a bolt with a glow
+bloom). **Breaking** on the `/icons` surface → **minor** (0.x). The pure engine
+is untouched. Direction + spec ratified by the owner; art ported from the
+approved `aster-weather-sky.html` reference.
+
+### Breaking (icons only)
+- **Removed `ColorfulWeatherIcon` and the individual `*Icon` exports.** Migrate to
+  `<WeatherIcon condition isDay />` rendered **inside** `<SkyPanel condition isDay>`.
+  Bare icons on a light card scored 1.03–1.47:1 contrast — effectively invisible;
+  the sky panel is what fixes that (below).
+- **Motion is ON by default** (R-1, supersedes the v0.3.0 static-default + opt-in
+  `animate`). Pass `animate={false}` for a static frame; `prefers-reduced-motion`
+  always resolves to static.
+
+### The contrast rule (measured, non-negotiable)
+- **Weather renders only on a sky surface at or darker than `#2E5A8C`** — the
+  floor where the white cloud (7.1:1), gold sun (4.7:1) and raindrop (3.29:1, the
+  binding constraint) all clear WCAG 1.4.11's 3:1. The `<SkyPanel>` carries the
+  tint with the component, so a cream page and a navy app get identical,
+  guaranteed contrast from one palette — no theme fork.
+
+### Added
+- **`<WeatherIcon condition isDay animate title />`** — fills its container (no
+  pixel size; `viewBox 0 0 64 64` + `xMidYMid meet`). Decorative by default;
+  `title` exposes `role="img"` + `<title>`.
+- **`<SkyPanel condition isDay animate>`** — the tinted surface; `thunderstorm` +
+  `heavy-rain` carry a `#CFE2FF` flash pulsing in step with the bolt.
+- **17-condition vocabulary** (the 14 WMO keys + `clear-night` /
+  `partly-cloudy-night` / `snow-night`) — nothing collapses to a smaller glyph
+  set. `SkyCondition` type, `SKY_TINTS`, `SKY_CONDITIONS`, `SKY_FLOOR`,
+  `skyConditionFor`, `skyGradient`, `WEATHER_ART`, and the injected-motion
+  `ensureSkyStyles` / `SKY_KEYFRAMES` are exported.
+- `WindIcon` / `DropletIcon` retained (metric glyphs, not part of the Sky system).
+
+### Kept
+- `WeatherIconKey` union, the WMO↔routed-key parity test (WX-P2-22), per-instance
+  gradient/filter ids (`useId`, WX-P3-9), and `usePrefersReducedMotion`.
+
 ## 0.5.2 — 2026-07-18
 
 Correctness fix, no API / shape / type change → **patch**. Consumers inherit it

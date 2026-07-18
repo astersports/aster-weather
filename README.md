@@ -14,7 +14,7 @@ committed):
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.5.2"
+    "@aster/weather": "github:astersports/aster-weather#v0.6.0"
   }
 }
 ```
@@ -92,16 +92,42 @@ An omitted hook is zero behavior change. Two resilience behaviors are always on:
   cold fetch once a key is warm. Cold misses still block. A failed background
   refresh keeps the stale value and fires `onError`.
 
-## Icons (`@aster/weather/icons`) — React
+## Icons (`@aster/weather/icons`) — React · the **Sky** system (v0.6.0)
+
+Weather renders inside a **panel of sky** tinted to the condition; the icon is
+glossy, dimensional, and fills its container. The panel is never lighter than
+`#2E5A8C` (`SKY_FLOOR`) — the measured floor where the white cloud (7.1:1), gold
+sun (4.7:1) and raindrop (3.29:1) all clear WCAG 3:1 — so contrast is guaranteed
+by construction: one palette, no light/dark theme fork.
 
 ```tsx
-import { ColorfulWeatherIcon } from "@aster/weather/icons";
+import { WeatherIcon, SkyPanel } from "@aster/weather/icons";
 import { getWeatherInfo } from "@aster/weather";
 
-<ColorfulWeatherIcon icon={getWeatherInfo(code).icon} isDay className="w-5 h-5" />
+const icon = getWeatherInfo(code).icon; // WeatherIconKey
+
+<SkyPanel condition={icon} isDay style={{ borderRadius: 16, padding: 12 }}>
+  <div style={{ width: 54, height: 54 }}>
+    <WeatherIcon condition={icon} isDay />
+  </div>
+</SkyPanel>
 ```
 
+- **No pixel size, ever.** The SVG is `width/height:100%` (`viewBox 0 0 64 64`,
+  `xMidYMid meet`) — the container decides the scale. A surface that can't give
+  the icon ~32px should render text, not a shrunken glyph.
+- **Motion is ON by default** (`animate={false}` for a static frame); an injected
+  stylesheet drives it and `prefers-reduced-motion` always resolves to static.
+- **17 conditions, nothing collapses:** the 14 WMO keys + `clear-night` /
+  `partly-cloudy-night` / `snow-night` (selected by `isDay`). `SKY_TINTS`,
+  `SKY_CONDITIONS`, `skyConditionFor`, and `ROUTED_ICON_KEYS` are exported for
+  consumers building their own sky surfaces.
+
 `react` is an optional peer dependency — only needed if you import `/icons`.
+
+> **Breaking from v0.5.x:** `ColorfulWeatherIcon` and the individual `*Icon`
+> exports are removed. Migrate to `<WeatherIcon>` inside a `<SkyPanel>`. Bare
+> icons on a light card were the contrast defect this release fixes.
 
 ## Scripts
 

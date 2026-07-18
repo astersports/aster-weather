@@ -1,16 +1,28 @@
 /**
- * @aster/weather/icons — colorful multi-stop SVG weather icons (React).
+ * @aster/weather/icons — the "Sky" weather icon system (v0.6.0).
  *
- * Verbatim from the St. Patrick `weather-icons/` set (the canonical source).
- * `ColorfulWeatherIcon` is the dispatcher: pass the string `icon` key from
- * `getWeatherInfo(code).icon` (from the core `@aster/weather` WMO map).
+ * Weather renders inside a panel of sky tinted to the condition; the icon is
+ * glossy and dimensional and fills its container. The panel is never lighter
+ * than #2E5A8C (SKY_FLOOR) — the measured floor where every mark clears WCAG
+ * 3:1 — so contrast is guaranteed by construction, one palette, no theme fork.
  *
- * React is a peer dependency — these render in any React 18/19 app.
+ *   import { WeatherIcon, SkyPanel } from "@aster/weather/icons";
+ *   import { getWeatherInfo } from "@aster/weather";
+ *
+ *   <SkyPanel condition={getWeatherInfo(code).icon} isDay style={{ borderRadius: 16, padding: 12 }}>
+ *     <div style={{ width: 54, height: 54 }}>
+ *       <WeatherIcon condition={getWeatherInfo(code).icon} isDay />
+ *     </div>
+ *   </SkyPanel>
+ *
+ * Motion is ON by default; `animate={false}` for a static frame and
+ * `prefers-reduced-motion` always resolves to static. React is a peer dependency.
  */
-export { SunnyIcon, PartlyCloudyIcon, OvercastIcon, FogIcon, DrizzleIcon, RainIcon, } from "./DayIcons.js";
-export { HeavyRainIcon, FreezingRainIcon, SnowIcon, ThunderstormIcon, ClearNightIcon, PartlyCloudyNightIcon, } from "./NightAndSevereIcons.js";
-export { WindIcon, DropletIcon } from "./UtilityIcons.js";
-export { ColorfulWeatherIcon, ROUTED_ICON_KEYS } from "./ColorfulWeatherIcon.js";
+export { WeatherIcon, type WeatherIconProps } from "./WeatherIcon.js";
+export { SkyPanel, type SkyPanelProps } from "./SkyPanel.js";
+export { SKY_TINTS, SKY_CONDITIONS, SKY_FLOOR, ROUTED_ICON_KEYS, skyConditionFor, skyGradient, type SkyCondition, } from "./skyTints.js";
+export { WEATHER_ART, type WeatherArtFn } from "./weatherArt.js";
+export { ensureSkyStyles, SKY_KEYFRAMES, SKY_STYLE_ID } from "./skyStyles.js";
+export { WindIcon, DropletIcon, type UtilityIconProps } from "./UtilityIcons.js";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion.js";
-export type { IconProps } from "./iconBase.js";
 //# sourceMappingURL=index.d.ts.map

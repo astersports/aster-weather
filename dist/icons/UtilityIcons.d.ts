@@ -1,11 +1,16 @@
 /**
- * Utility icons — wind + droplet. Not routed by the weather dispatcher; a
- * severe-wind or humidity surface imports them directly.
- *
- * WX-P3-12: default size normalized to w-4 h-4 (via IconSvg) and WindIcon now
- * carries the shared gradient-stroke treatment like its siblings.
+ * Utility icons — wind + droplet. NOT weather-condition icons and NOT part of the
+ * Sky system: these are small metric glyphs (a wind-speed / humidity row), kept
+ * so consumers on that surface don't have to reach for another icon set. They use
+ * a 24-viewBox and their own per-instance gradient id; unlike WeatherIcon they do
+ * not require a sky panel.
  */
-import { type IconProps } from "./iconBase.js";
-export declare function WindIcon({ className, decorative, label }: IconProps): import("react").JSX.Element;
-export declare function DropletIcon({ className, decorative, label }: IconProps): import("react").JSX.Element;
+import * as React from "react";
+export interface UtilityIconProps {
+    className?: string;
+    label?: string;
+    style?: React.CSSProperties;
+}
+export declare function WindIcon(props: UtilityIconProps): React.JSX.Element;
+export declare function DropletIcon(props: UtilityIconProps): React.JSX.Element;
 //# sourceMappingURL=UtilityIcons.d.ts.map
