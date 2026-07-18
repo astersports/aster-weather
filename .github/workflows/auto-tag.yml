@@ -1,16 +1,23 @@
 name: Auto-tag on version bump
 
-# When package.json's version on main has no matching git tag, cut it. Runs on
-# every push to main (and on demand). The Action's built-in token has the
-# contents:write rights needed to push a tag. Additive + reversible; keeps the
-# hub's release tags in lockstep with its merged version, so consumers can pin a
-# stable #vX.Y.Z instead of a raw commit SHA.
+# When package.json's version on main has no matching git tag, cut it — with a DESIGN
+# GATE: a *minor* or *major* bump is HELD unless the merge commit message carries
+# `[release-approved]` (or the workflow is dispatched with force=true). A *patch* bump
+# auto-tags (no design surface). This keeps the convenience of auto-tagging while making
+# a design-gated release (e.g. the weather Sky-icon v0.6.0, held for the architect's
+# render-read) impossible to ship by merely merging its PR — even by an automated
+# organizer. Additive + reversible. Runs on push to main.
 
 on:
   push:
     branches: [main]
     paths: ['package.json']
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force-tag a minor/major even without [release-approved]'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -22,14 +29,39 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Cut the tag if the version is untagged
+      - name: Cut the tag if untagged (minor/major gated on [release-approved])
+        env:
+          FORCE: ${{ github.event.inputs.force }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           TAG="v${VERSION}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists — nothing to do."
-            exit 0
+            echo "Tag $TAG already exists — nothing to do."; exit 0
           fi
+
+          # newest existing semver tag (bare, no leading v), for bump classification
+          PREV="$(git tag -l 'v*' | sed 's/^v//' | sort -V | tail -1)"
+          NEWMAJ="${VERSION%%.*}"; NEWMIN="$(printf '%s' "$VERSION" | cut -d. -f2)"
+          gated=false
+          if [ -n "$PREV" ]; then
+            PREVMAJ="${PREV%%.*}"; PREVMIN="$(printf '%s' "$PREV" | cut -d. -f2)"
+            if [ "$NEWMAJ" != "$PREVMAJ" ] || [ "$NEWMIN" != "$PREVMIN" ]; then
+              gated=true   # minor or major bump -> design-gated
+            fi
+          fi
+
+          if [ "$gated" = true ]; then
+            MSG="$(git log -1 --pretty=%B)"
+            if printf '%s' "$MSG" | grep -q '\[release-approved\]' || [ "$FORCE" = "true" ]; then
+              echo "Minor/major $TAG is approved ([release-approved] marker or force dispatch) — tagging."
+            else
+              echo "::notice::HELD — $TAG is a minor/major (design-gated) release; not auto-tagging."
+              echo "To release: merge with [release-approved] in the commit message, or run this"
+              echo "workflow via 'Run workflow' with force=true (a deliberate owner/architect action)."
+              exit 0
+            fi
+          fi
+
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "$TAG (auto-tagged from package.json on merge to main)"
