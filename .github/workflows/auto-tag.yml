@@ -1,0 +1,37 @@
+name: Auto-tag on version bump
+
+# When package.json's version on main has no matching git tag, cut it. Runs on
+# every push to main (and on demand). The Action's built-in token has the
+# contents:write rights needed to push a tag. Additive + reversible; keeps the
+# hub's release tags in lockstep with its merged version, so consumers can pin a
+# stable #vX.Y.Z instead of a raw commit SHA.
+
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cut the tag if the version is untagged
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to do."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG (auto-tagged from package.json on merge to main)"
+          git push origin "$TAG"
+          echo "Created and pushed $TAG"
