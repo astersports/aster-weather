@@ -1,0 +1,163 @@
+ASTER FLEET — @aster/weather v0.5.1 CONVERGE: SESSION HANDOFF
+=============================================================
+For architect review (claude.ai NY track). Relay: Frank (operator). Lane: CC
+(Claude Code — implementation + live verification).
+
+Date:    2026-07-18
+Grounding convention: [GROUNDED] = verified against file:line / installed bytes /
+git object this session. [OPEN] = a decision or read still owed.
+
+Honest scope constraint (stated up front, because it bounds every clearance below):
+CC's environment can clone only the PUBLIC repo, aster-weather. The four consumer
+repos (aster-sports, st-patricks, legacy-hoopers — and aster-studio) are PRIVATE and
+invisible to the architect's clone. So on every private repo, the architect's
+"render-first read" is a read of PASTED ARTIFACTS (bytes / hashes / import lines CC
+pastes), not an independent clone. Only aster-weather was verified directly by both
+lanes. Every [GROUNDED] on a private repo below is "grounded in the bytes CC pasted,"
+no more.
+
+
+1. WHAT SHIPPED (merged)
+------------------------
+- aster-weather v0.5.1 — TAGGED, on main at 47658c7 (merge of PR #13). [GROUNDED]
+  A behavior-preserving PATCH over v0.5.0 (public types byte-identical; proven by
+  `git diff --stat v0.5.0 v0.5.1` touching only helpers.ts + the 4 loaders + one
+  test + an index.ts comment — types.ts untouched). Carries:
+    * WX-R2 — fetch-timeout availability fix. The timeout now races the WHOLE
+      request chain (response headers AND the res.json() body read) under one
+      AbortController. Before, a stalled body could hang forever after the timer
+      cleared, and via the in-flight cache dedup every concurrent caller for that
+      coord hung with it. Centralized into fetchJsonWithTimeout.
+    * WX-R4 — log hygiene: the engine's internal console.error shape-guard logging
+      removed; failures surface only through the injected onError sink.
+  Owner-only release model held: CC prepared two clean commits (R2 / R4), held the
+  PR; Frank cut the tag. CC did not merge its own held PR.
+
+- ② st-patricks #331 — MERGED (squash 3919bb5). [GROUNDED via pasted bytes + PR API]
+  A pure pin+lockfile patch bump v0.5.0 -> v0.5.1. IMPORTANT CORRECTION on the
+  record: an earlier CC session claimed st-patricks was on a "v0.1.0 scaffold" with a
+  live fabricated-`0` defect. That was FALSE — byte-refuted this arc: the pin SHA
+  d4db522 is post-scaffold (ancestor of v0.2.0..v0.5.1, NOT of v0.1.0), the repo had
+  already converged through v0.2.0 (#322, the fabrication fix) -> v0.4.0 -> v0.5.0,
+  and the v0.5.0->v0.5.1 delta touches no public types. So ② was the trivial one, not
+  the fabrication-clearing one. The false framing was caught by verifying the input,
+  not building on it.
+
+- ① legacy-hoopers #69 — MERGED (dcdddb3 in main; Frank merged). [GROUNDED]
+  The Nova Select DEMO's game-day WeatherStrip wired LIVE to the hub (real dep
+  #v0.5.1), per the "live is the showcase, deterministic fallback" ruling:
+    * server-side `weather.gameday` tRPC query fetches current+daily for the real
+      Westchester demo coord (41.13, -73.72) via getCurrent/getDaily.
+    * shared/gamedayWeather.ts is the single source of truth: curated
+      GAMEDAY_WEATHER_FALLBACK + a pure, EXHAUSTIVE mapWeatherIcon (Record over the
+      14-key WMO vocab -> the strip's 4 glyphs; a new package icon key fails to
+      compile until mapped — WX-P2-15 propagated to the consumer).
+    * ALL-OR-NOTHING degrade: assembleLive returns a live object only when temp AND
+      feels are non-null AND four days carry non-null hi/lo; any null -> return null
+      -> caller swaps the whole fallback. Never {...live, ...fallback}. Display
+      types are `number` (not number|null), so a null cannot compile into the strip.
+    * LABEL-BLEED sealed: venue/city/status always read from the fallback constant;
+      the hub only ever supplies now+forecast. "Lakeshore County" is structurally
+      unreachable by live geography.
+  Architect signed off on the design + both guards + the pin #v0.5.1 (confirmed at
+  source via refs/pull/69/head, not a chat paste).
+
+- aster-studio — weather REMOVED entirely (PR #22, prior). Out of the fleet. [GROUNDED]
+
+
+2. VERIFIED AND HELD: aster-sports A
+------------------------------------
+A = raise aster-sports to the v0.5.1 floor. It is NOT a "real migration" (aster-sports
+already converged to a package CONSUMER at v0.2.0 and was on v0.5.0). Surface:
+  - pin #v0.5.0 -> #v0.5.1 (+ lockfile 47658c7)
+  - scripts/weather-pin-guard.mjs FLOOR 'v0.5.0' -> 'v0.5.1'
+  - weather-health-tick/index.ts WEATHER_PKG_VERSION "0.5.0" -> "0.5.1" + mirror README
+  - RE-VENDOR the edge Deno mirror (weather-health-tick can't import the npm package)
+    from the installed v0.5.1 dist.
+
+Commit b868c50f (base origin/main 3813b4b6). Guard PASS; weatherVendorGuard 7/7;
+weather-adjacent tests 31/31; lint 0 errors; build clean. [GROUNDED via CC's container]
+
+The mirror cleared on TWO conditions the architect set (hashes alone are blind to the
+second — this is the load-bearing catch of the arc):
+  (1) BYTE-IDENTITY — all 5 mirror files' sha256 == the v0.5.1 TAG dist:
+        cache.js  f676906c…   forecast.js 6024003e…   helpers.js b05e75c5…
+        types.js  d7de45fc…   wmo.js      1a852080…
+      Only forecast.js + helpers.js changed v0.5.0->v0.5.1 (WX-R2/R4); cache/types/wmo
+      byte-identical across the release.
+  (2) COMPLETENESS (transitive closure, NOT drift — a missing module is a resolve-time
+      break every hash reports green). The edge fn imports exactly:
+        weather-health-tick/index.ts:44:
+        import { fetchForecast } from "./_vendor/aster-weather/forecast.js";
+      — the FORECAST surface, NOT getCurrent/getDaily. (No current.js/daily.js/nowcast
+      referenced anywhere in the edge fn.) forecast.js's closure is exactly
+      {cache,forecast,helpers,types,wmo}; the "any import pointing outside the 5" check
+      is CLOSED. So the 5-file mirror is the RIGHT five for this consumer. The reason
+      the check mattered: the sibling consumer (#69) uses getCurrent/getDaily (Node
+      server) — a concrete reason to suspect the wrong entry — but the edge fn is a
+      forecast HEALTH PROBE with a different entry. Both faithful and complete.
+      The guard's check (4) enforces the byte-match in CI permanently, so it can't
+      silently drift later.
+
+A is BLOCKED on two operator acts CC cannot do from here:
+  - The push is a --force-with-lease to CC's own feature branch (the branch's remote
+    tip carried 2 stale prior-track README commits — b8fa368, d4fd8b1c — whose content
+    is already on main; CC restarted from main, so the branch diverged -> non-FF ->
+    force). Lease target b8fa368. Frank must confirm b8fa368 is the current branch tip
+    (CC can't see the remote) and authorize the force-push (auto-mode classifier blocks
+    it on a verbal go alone).
+  - After push, CC opens the held PR + verifies.
+
+
+3. OPEN FORKS — architect decisions owed
+----------------------------------------
+FORK B — aster-sports tournamentWeather.js (the one real remnant). [OPEN]
+  src/lib/engine/resolvers/tournamentWeather.js imports only the package's PRESENTATION
+  helpers (rainWord, WMO_EMOJI) but at line 43 still does its OWN direct
+  api.open-meteo.com/v1/forecast fetch — it's on the weather-pin-guard's
+  OPEN_METEO_ALLOWLIST with the rationale "daily date-range strip the package can't do
+  yet (D7)". This is the genuine un-migrated surface: it misses WX-R2 resilience and
+  the nullable "never fabricate 0" guard. THE FORK: does v0.5.1's daily API
+  (getDailyForecast) now cover tournamentWeather's date-range-strip need, retiring the
+  D7 exception? Migrating it is BEHAVIOR-AFFECTING -> a real render-first read (of a
+  pasted diff, per the constraint above), not a rubber stamp. Held until then.
+
+FORK aster-io — build-or-drop. [OPEN]
+  aster-io currently declares a weather dep but imports nothing (WX-P3-13, a dead
+  dep + token). The call: wire it as a GENUINE .io showcase, OR drop the dead dep +
+  token. "Declared and importing nothing" is not an allowed resting state.
+
+WX-R1 — commercial Open-Meteo tier (additive apiKey/base -> v0.6.0 minor). [OPEN,
+  PARKED on Frank's business/tier decision] Not blocking the converge.
+
+WX-R3 (getForecastBundle), WX-R5 (event-horizon 7 -> named constant), WX-R6
+  (onError × SWR docs) — deferred polish, no dependency on the above.
+
+
+4. DISCIPLINES EXERCISED THIS ARC (for the record)
+--------------------------------------------------
+- Verify the INPUT before building on it: the "v0.1.0 scaffold / live fabrication"
+  premise was false and was refused, not amplified (§1 correction). Same class caught
+  the "phantom aster-sports real-migration" framing (it was already a converged
+  consumer) — corrected against live package.json, not DERIVATION.md prose.
+- Completeness-past-green-hashes: a byte-faithful mirror of the WRONG entry point ships
+  a resolve-time break with every hash green. Cleared by the import-line + closure
+  check, not the hashes (§2 condition 2).
+- Private-repo clearance = pasted bytes, named as such (scope constraint, top).
+- Self-caught false-DRIFT: a cwd/relative-path bug in CC's own hash re-run reported
+  spurious drift; surfaced + corrected (absolute path -> all 5 match) rather than
+  waved through.
+- force-with-lease over the stale-branch push that already bit once this session; the
+  lease target re-read at push time, not trusted from an earlier turn.
+
+
+5. NEXT ACTIONS
+---------------
+- Frank: confirm b8fa368 is aster-sports' branch tip + authorize the A force-push
+  (or run it). Then CC opens the held A PR + verifies (AP#22).
+- Architect: rule FORK B (does v0.5.1 daily retire the D7 tournamentWeather exception)
+  and FORK aster-io (showcase vs drop). B's migration, if ruled go, ships with a
+  render-first read of the pasted diff.
+- WX-R1 tier decision remains Frank's when the business call is ready.
+
+END.
