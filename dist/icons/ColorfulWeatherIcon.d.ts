@@ -17,11 +17,13 @@
  * here fails that test instead of silently rendering the neutral fallback.
  */
 export declare const ROUTED_ICON_KEYS: ReadonlySet<string>;
-export declare function ColorfulWeatherIcon({ icon, className, isDay, label, decorative, }: {
+export declare function ColorfulWeatherIcon({ icon, className, isDay, label, decorative, animate, }: {
     icon: string;
     className?: string;
     isDay?: boolean;
     label?: string;
     decorative?: boolean;
+    /** Opt-in motion; always yields to prefers-reduced-motion. Default static. */
+    animate?: boolean;
 }): import("react").JSX.Element;
 //# sourceMappingURL=ColorfulWeatherIcon.d.ts.map

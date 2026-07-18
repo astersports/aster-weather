@@ -73,7 +73,7 @@ describe("WX-P3-9 — per-instance gradient ids", () => {
         <SunnyIcon />
       </>,
     );
-    const ids = [...html.matchAll(/id="([^"]*-sunGrad)"/g)].map((m) => m[1]);
+    const ids = [...html.matchAll(/id="([^"]*-asun)"/g)].map((m) => m[1]);
     expect(ids).toHaveLength(2);
     expect(ids[0]).not.toBe(ids[1]);
   });

@@ -39,9 +39,9 @@ function humanizeIconKey(key) {
     const spaced = key.replace(/-/g, " ");
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
-export function ColorfulWeatherIcon({ icon, className = "w-4 h-4", isDay = true, label, decorative = true, }) {
+export function ColorfulWeatherIcon({ icon, className = "w-4 h-4", isDay = true, label, decorative = true, animate = false, }) {
     const resolvedLabel = decorative ? undefined : label ?? humanizeIconKey(icon);
-    const base = { className, decorative, label: resolvedLabel, isDay };
+    const base = { className, decorative, label: resolvedLabel, isDay, animate };
     switch (icon) {
         case "clear":
         case "mostly-clear":

@@ -48,15 +48,18 @@ export function ColorfulWeatherIcon({
   isDay = true,
   label,
   decorative = true,
+  animate = false,
 }: {
   icon: string;
   className?: string;
   isDay?: boolean;
   label?: string;
   decorative?: boolean;
+  /** Opt-in motion; always yields to prefers-reduced-motion. Default static. */
+  animate?: boolean;
 }) {
   const resolvedLabel = decorative ? undefined : label ?? humanizeIconKey(icon);
-  const base = { className, decorative, label: resolvedLabel, isDay };
+  const base = { className, decorative, label: resolvedLabel, isDay, animate };
   switch (icon) {
     case "clear":
     case "mostly-clear":

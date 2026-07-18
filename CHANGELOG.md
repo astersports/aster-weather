@@ -7,6 +7,41 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.6.0 — 2026-07-18
+
+**Constellation icon line** (locked Direction A) — a full visual overhaul of the
+React SVG weather icons. Additive API (new optional `animate` prop; all 14 icon
+keys, the dispatcher signature, and the exported types are unchanged — no
+key/shape break), so classified **minor**. Carries ONE deliberate behavior change,
+called out below.
+
+### Changed (icons)
+- **New art: gold + navy duotone tied to the Aster constellation-arrow mark.** Gold
+  sun/moon, navy(day)/cream(night) duotone clouds, precip in accent gold, and the
+  snowflake drawn as an **asterisk — the "aster"**. Replaces the prior material
+  blue-grey set, which read as a stock pack and muddied at the 16–24px inline sizes
+  the schedule chips and per-Mass rows actually use. Tuned for small-size legibility
+  and to hold on both light and dark grounds (the gold accents read on either; the
+  cream night-cloud treatment reads on dark).
+- **BEHAVIOR CHANGE — motion is now opt-in.** Icons render **static by default**;
+  pass the new `animate` prop for motion (sun spin / cloud drift / precip fall).
+  `prefers-reduced-motion` still always wins. Prior versions animated by default,
+  so a consumer that relied on default motion now gets static art until it passes
+  `animate`. This is the only behavior change; the visuals + the `animate` opt-in
+  are the release.
+
+### Added
+- **`IconProps.animate?: boolean`** (default `false`) + threaded through
+  `ColorfulWeatherIcon`. Palette constants (`GOLD` family, `DAY_CLOUD` /
+  `NIGHT_CLOUD` / `cloudStops`) exported from the icon base for consumers that
+  compose their own.
+
+### Unchanged
+- All 14 `ROUTED_ICON_KEYS`, the dispatcher contract, `IconProps` (aside from the
+  additive `animate`), the a11y semantics (WX-P2-8), per-instance gradient ids
+  (WX-P3-9), and the WMO↔dispatcher parity invariant (WX-P2-22). The pure engine
+  (fetch/parse/cache) is untouched.
+
 ## 0.5.1 — 2026-07-17
 
 Behavior-preserving fixes (no API or shape change → **patch**). Cut ahead of the

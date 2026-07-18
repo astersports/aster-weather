@@ -14,7 +14,7 @@ committed):
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.5.1"
+    "@aster/weather": "github:astersports/aster-weather#v0.6.0"
   }
 }
 ```
@@ -100,6 +100,12 @@ import { getWeatherInfo } from "@aster/weather";
 
 <ColorfulWeatherIcon icon={getWeatherInfo(code).icon} isDay className="w-5 h-5" />
 ```
+
+The set is the **Constellation** line (v0.6.0) — gold + navy duotone tied to the
+Aster mark, tuned to read at 16–24px inline sizes. Icons are **static by default**;
+pass `animate` for opt-in motion (sun spin / precip fall), which always yields to
+`prefers-reduced-motion`. `isDay` selects the navy (day) vs cream (night) cloud
+treatment — the cream treatment also reads on dark surfaces.
 
 `react` is an optional peer dependency — only needed if you import `/icons`.
 
