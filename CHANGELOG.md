@@ -7,6 +7,25 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.5.2 — 2026-07-18
+
+Correctness fix, no API / shape / type change → **patch**. Consumers inherit it
+silently on bump; no consumer code moves.
+
+### Fixed
+- **`rainWord()` now classifies WMO 85/86 (snow showers) as `"snow"`, not
+  `"rain"`.** The precipitation-noun helper returned `"snow"` only for the
+  contiguous 71–77 band (snowfall + snow grains) and let everything else fall
+  through to `"rain"`. But snow appears in a SECOND, non-contiguous WMO band —
+  85 (light snow showers) / 86 (heavy snow showers) — which sits just above the
+  rain-showers band (80–82), so it was silently mislabeled. `WMO_CODES` already
+  icons 85/86 as `light-snow` / `heavy-snow`, so the text noun contradicted the
+  icon on the same reading (e.g. a snow-shower daily strip read `"60% rain"`
+  beside a snow glyph). The return type (`"storms" | "snow" | "rain"`) and the
+  signature are unchanged — only the branch coverage widened, so this is a pure
+  behavior-correctness patch. New `pure.test.ts` assertions lock 85/86 → `snow`
+  and 81 → `rain` (the rain-shower band just below stays rain).
+
 ## 0.5.1 — 2026-07-17
 
 Behavior-preserving fixes (no API or shape change → **patch**). Cut ahead of the

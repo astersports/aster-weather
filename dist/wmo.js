@@ -125,7 +125,11 @@ export function labelForCode(code) {
 export function rainWord(code) {
     if (code >= 95)
         return "storms";
-    if (code >= 71 && code <= 77)
+    // Snow falls in two disjoint WMO bands: 71-77 (snowfall + grains) and
+    // 85/86 (snow showers). The shower pair sits above the rain-showers band
+    // (80-82) so it is NOT contiguous with 71-77 — it must be named explicitly
+    // or snow showers mislabel as "rain" (they already icon as snow in WMO_CODES).
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86)
         return "snow";
     return "rain";
 }
