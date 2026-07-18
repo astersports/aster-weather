@@ -1,0 +1,92 @@
+name: Claude adversarial review
+
+# An independent AI reviewer on every human/CC-authored PR — a second pair of eyes
+# whose job is to CORRECT the author, not rubber-stamp. Reproduces the "architect
+# corrects CC" lane, automatically, on every change. Comments only (never gates).
+#
+# Cost control: skips bot PRs (Dependabot etc. — their CI gates them) and stays a
+# silent no-op until the ANTHROPIC_API_KEY org secret is set. Uses Sonnet 5, with a
+# bounded --max-turns and cancel-in-progress concurrency to cap spend per PR.
+#
+# Posting: findings go up as INLINE PR review comments via the action's own
+# inline-comment tool, plus ONE top-level summary via `gh pr comment`. The tools the
+# prompt uses MUST be granted in claude_args --allowedTools, or the action burns its
+# turns on permission denials and never posts. Config mirrors the official
+# anthropics/claude-code-action docs (solutions.md -> "Automatic PR Code Review").
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # required by claude-code-action (OIDC)
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Human / Claude-Code-authored PRs only — bots are gated by CI, not reviewed.
+    if: github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # empty until provisioned -> steps skip
+    steps:
+      - name: Checkout
+        if: env.HAS_KEY != ''
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Adversarial review
+        if: env.HAS_KEY != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are an INDEPENDENT ADVERSARIAL REVIEWER of this pull request — a second
+            pair of eyes whose job is to CORRECT the author, not to approve. Assume the
+            author (often another Claude) may be confidently wrong. Your value is finding
+            what they missed.
+
+            FIRST read this repo's CLAUDE.md and docs/AUTOMATION_CHARTER.md if present —
+            violations of the house rules are the highest-value findings.
+
+            Then tear into the DIFF and hunt for:
+            - Correctness: logic errors, off-by-one, null/undefined, wrong assumptions,
+              missed edge cases, race conditions, silent error-swallowing.
+            - Security / safety: injection, auth or permission gaps, secret leaks, SSRF,
+              privilege escalation, money-path or minor-PII exposure, a bypassed gate.
+            - Approach: is there a simpler or more correct design the author missed? Did
+              they build a parallel system, duplicate a source of truth, or misread the
+              requirement?
+            - House-rule violations against CLAUDE.md (registered anti-patterns, token /
+              naming rules, file-size caps, fail-closed expectations).
+
+            The PR branch is already checked out in the current working directory. You may
+            Read/Grep/Glob files in THIS repo to verify claims (e.g. read the code a doc
+            describes, or grep for a symbol) — grounding a finding beats asserting it.
+
+            SCOPE — you can see ONLY this one repo's checkout. A pointer to a file in a
+            SIBLING repo (e.g. `astersports/aster-io` -> `docs/PORTFOLIO_MAP.md`) CANNOT be
+            verified from here — do NOT report a cross-repo pointer as a dead link or a
+            defect. At most note it as "unverifiable from this repo" and move on.
+
+            HOW TO POST — post GitHub comments, do NOT just reply as a chat message:
+            - Use `mcp__github_inline_comment__create_inline_comment` (with
+              `confirmed: true`) to attach each finding to the exact offending line(s).
+              For each finding: quote the code, explain why it is wrong and how it fails,
+              propose the fix, and tag severity CRITICAL / MAJOR / MINOR.
+            - Use `gh pr comment` for ONE short top-level summary (a count by severity,
+              or a single line "diff is clean" if you genuinely found nothing).
+            - Be direct and specific. No praise, no formatting nitpicks. Only post GitHub
+              comments — don't submit the review as a chat message.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --max-turns 30
+            --model claude-sonnet-5
