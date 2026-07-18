@@ -87,6 +87,6 @@ jobs:
             - Be direct and specific. No praise, no formatting nitpicks. Only post GitHub
               comments — don't submit the review as a chat message.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
-            --max-turns 30
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(cat:*),Bash(ls:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Read,Grep,Glob"
+            --max-turns 40
             --model claude-sonnet-5
