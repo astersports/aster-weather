@@ -14,7 +14,7 @@ committed):
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.5.1"
+    "@aster/weather": "github:astersports/aster-weather#v0.5.2"
   }
 }
 ```

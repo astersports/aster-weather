@@ -35,6 +35,12 @@ describe("wmo maps", () => {
     expect(rainWord(73)).toBe("snow");
     expect(rainWord(95)).toBe("storms");
     expect(rainWord(99)).toBe("storms");
+    // snow showers (85/86) are snow, not rain — non-contiguous with 71-77,
+    // and must not fall through to the "rain" default (matches WMO_CODES icons).
+    expect(rainWord(85)).toBe("snow");
+    expect(rainWord(86)).toBe("snow");
+    // rain showers (80-82) stay rain — the band just below the snow-shower pair.
+    expect(rainWord(81)).toBe("rain");
   });
 });
 
