@@ -81,4 +81,6 @@ jobs:
           BASE_LOCK: /tmp/base-lock
           HEAD_LOCK: /tmp/head-lock
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: node scripts/dependency-gate.mjs

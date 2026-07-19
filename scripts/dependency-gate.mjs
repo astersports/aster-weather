@@ -192,6 +192,38 @@ flagged.sort((a, b) => a.name.localeCompare(b.name));
 console.log('Dependency changes that require a human owner (resolved tree — direct + transitive):');
 for (const f of flagged) console.log(`  • ${f.name}  ${f.from} → ${f.to}   [${f.reasons.join('; ')}]`);
 
+// ── Dependabot minor/patch fast-path (ratified policy: Dependabot minor/patch
+//    auto-merge). Turns a FLAGGED PR into PASS only when we can PROVE the change
+//    set is a Dependabot minor/patch group: authored by dependabot[bot], on a
+//    dependabot minor/patch (or grouped github-actions) branch, AND every flagged
+//    change is a determinable, NON-major bump of an ALREADY-PRESENT package.
+//    Fail-closed: a MAJOR bump, a newly-added/removed dependency, an unparseable
+//    version, a non-dependabot author, or an unrecognized branch each fall through
+//    to the human `dep-review-approved` label requirement below. The semver proof
+//    (no major among the changes) is decisive; the branch name only corroborates.
+const prAuthor = (process.env.PR_AUTHOR || '').trim();
+const headRef = (process.env.HEAD_REF || '').trim();
+const isDependabot = prAuthor === 'dependabot[bot]';
+const isMinorPatchGroupBranch =
+  /^dependabot\//.test(headRef) &&
+  (/(^|[/-])minor([/-]|$)/.test(headRef) ||
+    /(^|[/-])patch([/-]|$)/.test(headRef) ||
+    /github-actions-all/.test(headRef));
+const everyFlaggedIsMinorPatchBump = flagged.every((f) => {
+  if (f.from === '(added)' || f.to === '(removed)') return false; // add / remove
+  if (!partsOf(f.from) || !partsOf(f.to)) return false;           // unparseable
+  return !isMajorBump(f.from, f.to);                              // must not be major
+});
+if (isDependabot && isMinorPatchGroupBranch && everyFlaggedIsMinorPatchBump) {
+  console.log(
+    `\ndependency-gate: PASS — Dependabot minor/patch group ` +
+      `(author=${prAuthor}, branch=${headRef}). Every flagged change is a ` +
+      `determinable non-major bump of an already-present package; no major bump, ` +
+      `no newly-added/removed dependency. Ratified policy: Dependabot minor/patch auto-merge.`
+  );
+  process.exit(0);
+}
+
 if (labels.includes(OVERRIDE)) {
   console.log(`\ndependency-gate: PASS — released by the '${OVERRIDE}' label (human sign-off recorded).`);
   process.exit(0);
