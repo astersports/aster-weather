@@ -45,7 +45,7 @@
     "happy-dom": "^20.11.0",
     "react": "^19.0.0",
     "react-dom": "^19.2.7",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^2.1.0"
   },
   "repository": {
