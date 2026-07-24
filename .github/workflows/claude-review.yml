@@ -110,7 +110,7 @@ jobs:
           fi
       - name: Checkout
         if: env.HAS_KEY != '' && steps.gate.outputs.run == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Adversarial review
