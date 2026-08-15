@@ -150,6 +150,16 @@ jobs:
             verified from here — do NOT report a cross-repo pointer as a dead link or a
             defect. At most note it as "unverifiable from this repo" and move on.
 
+            BUDGET — you have a limited number of turns. Scale the work to the diff:
+            a docs-only change does not need the house rules re-read from scratch;
+            a money-path or auth change does. If you are running long, STOP EXPLORING
+            and post what you have.
+
+            POST AS YOU GO — post each finding the moment you are sure of it, not in a
+            batch at the end. A run that is cut off mid-review must still leave its
+            findings behind; batching means a cutoff throws away everything, which is
+            exactly what happened on 2026-08-15 (41 turns, $1.45, nothing posted).
+
             HOW TO POST — post GitHub comments, do NOT just reply as a chat message:
             - Use `mcp__github_inline_comment__create_inline_comment` (with
               `confirmed: true`) to attach each finding to the exact offending line(s).
@@ -161,5 +171,5 @@ jobs:
               comments — don't submit the review as a chat message.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(cat:*),Bash(ls:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Read,Grep,Glob"
-            --max-turns 40
+            --max-turns 90
             --model claude-sonnet-5
