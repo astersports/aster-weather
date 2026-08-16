@@ -2,6 +2,14 @@ name: CI
 
 on:
   pull_request:
+    # `labeled`/`unlabeled` are REQUIRED. dependency-gate is released by an owner
+    # applying `dep-review-approved`, and it reads labels from the event payload.
+    # Without these types the only events are opened/synchronize/reopened — and
+    # dep-review-label-guard STRIPS the label on synchronize. The gate could flag
+    # a PR and then be released by no action at all: re-running replays the
+    # original payload (which predates the label) and pushing removes it.
+    # Found on aster-io 2026-08-15, the first PR ever to trip the gate.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
