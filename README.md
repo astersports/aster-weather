@@ -14,6 +14,12 @@ and merge rationale.
 > so the bar is higher than in an app repo — and that is exactly why the release is gated
 > behind `[release-approved]` rather than shipping on merge.
 
+**This README is the reference.** Being a public package, the facts live here — consumers, the
+resilience chain, the Sky system, the versioning plan — rather than in a `docs/` directory that
+would be a second description of the same things, free to drift from this one. The *rules* an
+agent must follow are [`CLAUDE.md`](./CLAUDE.md), kept short because it loads on every turn.
+([Why each fact gets exactly one home.](https://github.com/astersports/aster-io/blob/main/docs/DOC_DOCTRINE.md))
+
 ## Install
 
 Consumed as a git dependency off a release **tag** — no registry, `dist/` is committed, no

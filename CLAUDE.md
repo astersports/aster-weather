@@ -1,8 +1,10 @@
 # CLAUDE.md — aster-weather (`@aster/weather`)
 
-> **RULES only.** Concepts → [`README.md`](README.md); facts → `docs/`. Compressed 2026-08-18
-> from 171 lines against [the doc doctrine](https://github.com/astersports/aster-io/blob/main/docs/DOC_DOCTRINE.md);
-> **nothing deleted** — the moved material is [`docs/PACKAGE_SCOPE.md`](docs/PACKAGE_SCOPE.md).
+> **RULES only.** Compressed 2026-08-18 from 171 lines against
+> [the doc doctrine](https://github.com/astersports/aster-io/blob/main/docs/DOC_DOCTRINE.md);
+> **nothing deleted.** This is a public package, so [`README.md`](README.md) **is** the
+> reference and the facts live there — consumers, the resilience chain, the Sky system, the
+> versioning plan. This file is only what an agent must not get wrong.
 > **Canonical estate truth:** `astersports/aster-io` → [`WHAT_IS_BUILT.md`](https://github.com/astersports/aster-io/blob/main/docs/WHAT_IS_BUILT.md).
 > Read it before claiming what any Aster product is or does; this file governs *this library only*.
 
@@ -21,7 +23,7 @@ They live in `st-patricks-armonk/server/weather/` and are **pending upstream**. 
 grep for `readingKind`, `provenance`, `rung` or `NWS` and you get nothing.
 
 Anyone documenting or marketing this library must not claim them. What it *does* have is the
-six-step resilience chain in `src/cache.ts` — [`docs/PACKAGE_SCOPE.md`](docs/PACKAGE_SCOPE.md).
+six-step resilience chain in `src/cache.ts` — [`README.md`](README.md#the-resilience-chain-srccachets).
 
 ## 2. The five disciplines that are not negotiable
 
@@ -95,5 +97,5 @@ and it is worth restating in any consumer-facing doc.
 | | |
 |---|---|
 | **Canonical estate truth** · cross-repo state | `aster-io` → `docs/WHAT_IS_BUILT.md` · `docs/ESTATE_STATE.md` |
-| Package scope, consumers, cache chain, icons, versioning | [`docs/PACKAGE_SCOPE.md`](docs/PACKAGE_SCOPE.md) |
+| Package scope, consumers, cache chain, icons, versioning | [`README.md`](README.md) |
 | The upstreaming plan (four repos) | `st-patricks-armonk/docs/WEATHER_TRUTH_PLAN.md` |
