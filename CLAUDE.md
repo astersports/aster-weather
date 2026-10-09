@@ -83,7 +83,7 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
   armed — a human reviews and merges them.
 - **Editing `.github/**` or `scripts/dependency-gate.mjs` is a guard change** (CODEOWNERS names
   the owner) — never weaken a gate or its `SENSITIVE` list to get a PR through.
-- `claude-review.yml` comments only, on expensive surfaces or a `review` label; it never gates.
+- No AI reviewer runs here: `claude-review.yml` was removed by owner ruling on 2026-10-09 (#46).
 
 ## 7. Working here
 
