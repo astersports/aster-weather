@@ -2,6 +2,11 @@ name: Dependabot auto-merge
 
 # Auto-merges Dependabot MINOR and PATCH updates once CI is green. MAJOR updates
 # are never touched — they wait for a human (they can carry breaking changes).
+# A minor/patch update is ALSO left for a human when the dependency gate flags
+# anything in the resolved tree (a money/child/auth-adjacent package, a transitive
+# major, a watchlisted or opaque pin, an unparseable version): the gate reports
+# rather than blocks (2026-10-04 owner directive), so "flagged" means "review it
+# substantively", and this workflow is where that review is made unskippable.
 # Uses GitHub's native auto-merge, so it only ever merges on green required checks.
 # Requires the repo setting "Allow auto-merge" to be on.
 
@@ -21,8 +26,39 @@ jobs:
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Enable auto-merge for minor + patch
+      - name: Checkout (data only — no PR code is executed)
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch' }}
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run the BASE commit's dependency gate and read its verdict
+        id: gate
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          LOCK=pnpm-lock.yaml
+          git show "$BASE_SHA:scripts/dependency-gate.mjs" > "$RUNNER_TEMP/dependency-gate.mjs"
+          git show "$BASE_SHA:package.json" > "$RUNNER_TEMP/base-package.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/base-package.json"
+          cp package.json "$RUNNER_TEMP/head-package.json"
+          git show "$BASE_SHA:$LOCK" > "$RUNNER_TEMP/base-lock" 2>/dev/null || : > "$RUNNER_TEMP/base-lock"
+          cp "$LOCK" "$RUNNER_TEMP/head-lock" 2>/dev/null || : > "$RUNNER_TEMP/head-lock"
+          # A gate failure (bad inputs) fails this step, so nothing is armed.
+          OUT="$(BASE_PKG="$RUNNER_TEMP/base-package.json" HEAD_PKG="$RUNNER_TEMP/head-package.json" \
+                 BASE_LOCK="$RUNNER_TEMP/base-lock" HEAD_LOCK="$RUNNER_TEMP/head-lock" \
+                 node "$RUNNER_TEMP/dependency-gate.mjs")"
+          printf '%s\n' "$OUT"
+          # Arm only on the gate's clean verdict; anything it lists is left for a human.
+          if printf '%s\n' "$OUT" | grep -q 'dependency-gate: PASS — no major or money/child/auth-adjacent dependency change'; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dependency-gate flagged this update — auto-merge NOT armed; a human reviews it."
+          fi
+      - name: Enable auto-merge for minor + patch the gate did not flag
+        if: ${{ (steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch') && steps.gate.outputs.clean == 'true' }}
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
