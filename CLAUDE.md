@@ -90,8 +90,10 @@ and it is worth restating in any consumer-facing doc.
 - **A minor/major tag is held** until `[release-approved]` is in the merge commit
   (`.github/workflows/auto-tag.yml`) — deliberately, so a design- or shape-carrying release
   cannot ship by merely merging.
-- `scripts/dependency-gate.mjs` fails any PR with a major bump or a money/child/auth-adjacent
-  dependency change; release is by the owner-only `dep-review-approved` label.
+- `scripts/dependency-gate.mjs` **reports** a major bump or a money/child/auth-adjacent dependency
+  change and passes — a flagged change means review it substantively; no label is requested or
+  read (the labels were retired 2026-10-04). It fails closed on missing or unreadable inputs, runs
+  from the PR's base commit, and Dependabot auto-merge skips any update it flags.
 - When a consumer bumps its pin, that is a reviewed PR **in the consumer repo**.
 
 | | |
