@@ -72,15 +72,14 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 
 - **Required check: `typecheck + test`** (the `main protection` ruleset) — `pnpm run check`,
   `pnpm run test`, then the committed-`dist/` drift check.
-- **`dependency-gate` still runs on every PR** (`scripts/dependency-gate.mjs`): it fails on a major
-  bump or any change to a money/child/auth-adjacent package, scanning the resolved lockfile.
-  It is **not** a required check, so its red does not block merge on its own.
-- **The `dep-review-approved` and `owner-go` labels are retired** (owner directive, 2026-10-04).
-  Do not request or apply them, even though `dependency-gate.mjs` and `dep-review-label-guard.yml`
-  on `main` still name the label. A red `dependency-gate` means review the bump substantively
-  (changelog, full suite, consumers' shape), never wait for a label.
-- **Dependabot minor/patch auto-merge on green** (`dependabot-automerge.yml`); majors are never
-  armed — a human reviews and merges them.
+- **`dependency-gate` runs on every PR from the base commit's copy** (`scripts/dependency-gate.mjs`):
+  it **reports** a major bump or a money/child/auth-adjacent package (resolved lockfile) and passes;
+  it fails closed only on missing or unreadable inputs. Not a required check. A flagged change
+  means review it substantively (changelog, full suite, consumers' shape).
+- **The `dep-review-approved` and `owner-go` labels are retired and deleted** (owner directive,
+  2026-10-04; labels removed 2026-10-09). Nothing reads them; never request or apply them.
+- **Dependabot minor/patch auto-merge on green** (`dependabot-automerge.yml`) unless the gate
+  flags the update; majors and flagged updates wait for a human.
 - **Editing `.github/**` or `scripts/dependency-gate.mjs` is a guard change** (CODEOWNERS names
   the owner) — never weaken a gate or its `SENSITIVE` list to get a PR through.
 - No AI reviewer runs here: `claude-review.yml` was removed by owner ruling on 2026-10-09 (#46).

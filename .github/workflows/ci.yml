@@ -2,14 +2,7 @@ name: CI
 
 on:
   pull_request:
-    # `labeled`/`unlabeled` are REQUIRED. dependency-gate is released by an owner
-    # applying `dep-review-approved`, and it reads labels from the event payload.
-    # Without these types the only events are opened/synchronize/reopened — and
-    # dep-review-label-guard STRIPS the label on synchronize. The gate could flag
-    # a PR and then be released by no action at all: re-running replays the
-    # original payload (which predates the label) and pushing removes it.
-    # Found on aster-io 2026-08-15, the first PR ever to trip the gate.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -49,20 +42,27 @@ jobs:
             exit 1
           fi
 
-  # Supply-chain faucet gate — mirrors astersports/aster-sports (Phase 0.0 /
-  # PLAN_ON_TRUTH). Dependency changes that are a major-version bump (or touch a
-  # money/child/auth-adjacent package, none present here today) must NOT auto-
-  # merge on green — they require a human owner, who releases the PR with the
-  # `dep-review-approved` label. Minor/patch bumps to non-sensitive deps pass
-  # and stay auto-mergeable. Gate by what the dependency TOUCHES, not the
-  # version-jump size. This repo is the shared package every other consumes, so
-  # a surprise major here ripples cross-repo — hence the gate. PR-only.
-  # NOTE (owner): to BLOCK merge, mark this a REQUIRED status check in branch
-  # protection — the job alone only reports.
+  # Supply-chain faucet gate — ported from aster-studio (#67) / the estate kit
+  # (aster-io kit/files/scripts/estate/dependency-gate.mjs). Inspects the resolved
+  # tree and REPORTS, in the job log and step summary, any major-version bump, any
+  # change to a money/child/auth-adjacent package, any watchlisted @aster/* pin,
+  # any opaque github pin and any unparseable version change. Per the 2026-10-04
+  # owner directive no manual label is requested or read: a classified change
+  # passes, and means "review it substantively"; the required `typecheck + test`
+  # check and blocking reviews govern the merge. It still FAILS CLOSED when a
+  # package.json or lockfile input is missing, unreadable or unparseable.
+  #
+  # BASE-TRUSTED, as aster-sports runs its gate: the script is taken from the PR's
+  # BASE commit, so a PR cannot rewrite the classifier that judges it. A PR that
+  # edits the gate is judged by main's copy; the edit takes effect after merge.
+  # The script's own tests run in `typecheck + test` (`pnpm run test`) against the
+  # PR's copy. PR-only. No install.
   dependency-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -72,6 +72,20 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+      - name: Extract the BASE commit's gate (main's code judges the PR, not the PR's own copy)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git rev-parse --verify -q "$BASE_SHA^{commit}" > /dev/null
+          mkdir -p "$RUNNER_TEMP/base-gate"
+          if git cat-file -e "$BASE_SHA:scripts/dependency-gate.mjs" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/dependency-gate.mjs" > "$RUNNER_TEMP/base-gate/dependency-gate.mjs"
+            echo "GATE=$RUNNER_TEMP/base-gate/dependency-gate.mjs" >> "$GITHUB_ENV"
+          else
+            echo "::warning::base $BASE_SHA has no scripts/dependency-gate.mjs — falling back to the PR head's own copy, which this PR could also have edited"
+            echo "GATE=scripts/dependency-gate.mjs" >> "$GITHUB_ENV"
+          fi
       - name: Resolve base + head package.json + lockfile (P1-A — scan the resolved tree)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -82,11 +96,10 @@ jobs:
           cp package.json /tmp/head-package.json
           git show "$BASE_SHA:$LOCK" > /tmp/base-lock 2>/dev/null || : > /tmp/base-lock
           cp "$LOCK" /tmp/head-lock 2>/dev/null || : > /tmp/head-lock
-      - name: Gate major / money-child-auth dependency changes (resolved tree)
+      - name: Report major / money-child-auth dependency changes (resolved tree; base's copy of the gate)
         env:
           BASE_PKG: /tmp/base-package.json
           HEAD_PKG: /tmp/head-package.json
           BASE_LOCK: /tmp/base-lock
           HEAD_LOCK: /tmp/head-lock
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: node scripts/dependency-gate.mjs
+        run: node "$GATE"

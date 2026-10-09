@@ -1,11 +1,18 @@
 #!/usr/bin/env node
-// Supply-chain faucet gate — CLAUDE.md Phase 0.0 / docs/PLAN_ON_TRUTH_2026-07-01.
+// Ported from aster-studio's scripts/dependency-gate.mjs (aster-studio #67), itself ported from the
+// estate kit — astersports/aster-io kit/files/scripts/estate/dependency-gate.mjs (the 2026-10-04
+// directive-aligned version). Kept at this repo's own path so the `dependency-gate` job, its CI
+// wiring and CODEOWNERS entry stay where they were. Local differences, all additive (detection is
+// never narrowed by the port): the WATCHLIST carries `@aster/tokens` as aster-studio's does (inert
+// here — this repo pins neither watched package); the flagged listing is also written to the job's
+// step summary; and this repo's own two earlier hardenings are kept — the broader auth patterns
+// (WX-P2-17) and the report on any version change neither side of which parses as semver (WX-P3-17).
 //
-// Fails a PR (forcing a human) when a dependency change is EITHER:
-//   (a) a MAJOR-version bump (any package; 0.x minor counts as major per semver), OR
-//   (b) ANY change (add/remove/version) to a money/child/auth-adjacent package.
-// Everything else (minor/patch to non-sensitive deps) PASSES and stays
-// eligible for auto-merge — so the good part of the faucet keeps flowing.
+// Supply-chain faucet gate — estate policy, aster-io docs/AUTOMATION_CHARTER.md.
+//
+// Inspects and reports major, sensitive and watchlisted changes. Eligibility now
+// depends on automated tests and blocking reviews, never a manual approval label.
+// Package and lockfile parsing remain fail-closed in CI.
 //
 // Scans the RESOLVED DEPENDENCY TREE (the lockfile — direct AND transitive),
 // not just package.json, because the founding example (`cookie 1→2`) is a
@@ -14,15 +21,19 @@
 // data. Handles npm (package-lock.json v3) and pnpm (pnpm-lock.yaml v9),
 // auto-detected by content.
 //
-// Gate by what the dependency TOUCHES, not the version-jump size. A human owner
-// releases a gated PR by applying the `dep-review-approved` label (a real,
-// auditable human sign-off — its integrity is enforced by the label-integrity
-// workflow, not by this script).
-//
-// Env: BASE_PKG, HEAD_PKG (package.json paths), BASE_LOCK, HEAD_LOCK (lockfile
-//      paths; may be empty on first commit), LABELS (comma-joined PR labels).
+// Env: BASE_PKG, HEAD_PKG (package.json paths), BASE_LOCK, HEAD_LOCK (lockfile paths).
+//      In CI (GITHUB_ACTIONS === 'true'), BASE_PKG/HEAD_PKG must resolve: an unset, unreadable,
+//      or malformed package.json FAILS CLOSED (AP #65) rather than silently reading as "no
+//      dependencies" — an explicit '{}' file (what CI writes when a side has no package.json
+//      yet, aster-sports ci.yml:464 / aster-io ci.yml:120) is a STATED fact and stays legitimate.
+//      A lockfile may be legitimately ABSENT only when that (now-known) side's package.json
+//      declares no dependencies (first commit). Otherwise an unset, unreadable, empty, or
+//      unparseable lockfile also FAILS CLOSED instead of silently reading as an empty tree — a
+//      wrong-named lockfile (e.g. package-lock.json in a pnpm repo) must not shrink the gate to
+//      the package.json belt alone. Outside CI the script keeps today's lenient behaviour and
+//      warns that the result is not a CI verdict.
 
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 
 // Money / child / auth-adjacent surface. Matched against dependency NAMES.
 // Append-only + commented; adding a new sensitive lib is itself a
@@ -41,9 +52,29 @@ const SENSITIVE = [
 ];
 const isSensitive = (name) => SENSITIVE.some((re) => re.test(name));
 
-const read = (p) => {
-  try { return p ? readFileSync(p, 'utf8') : ''; } catch { return ''; }
-};
+// Cross-repo pinned deps (`@aster/tokens`, `@aster/weather`). DELIBERATE POLICY (operator-ratified
+// 2026-07-20): ANY change — at ANY semver level, incl. a patch — is reported for substantive review.
+// The kit narrowed its list to weather on 2026-09-12 because the five consuming repos own their own
+// token copies; aster-studio's port keeps `@aster/tokens` because it pins it; this repo pins neither, so the list
+// is inert here and kept identical (reporting only — it no longer fails the check). Semver level is the publisher's claim about
+// intent, not a bound on blast radius, and the publisher is us. This is NOT a workaround for a
+// parser gap (parsePnpm now reads the real semver) — it is an intentional force-report that sits
+// on top of `isMajorBump` for these lanes.
+const WATCHLIST = [/^@aster\/tokens$/, /^@aster\/weather$/];
+const isWatched = (name) => WATCHLIST.some((re) => re.test(name));
+
+// Defensive backstop (AP #65 fail-closed): a github/tarball/git pin whose resolved version STILL
+// can't be semver-parsed — rare now that parsePnpm() reads pnpm's nested `version:` field, but if a
+// lockfile ever yields an unparseable version for a changed github pin, report it for substantive review. Not the primary mechanism (that's isMajorBump on the now-real semver + the watchlist above).
+// Deliberately STRICT: fires if ANY representation of the pin (the lockfile's resolved semver, OR
+// package.json's declared range) is unparseable and github/tarball-shaped. A github-pinned dep's
+// package.json spec (`github:org/repo#<sha>`) is unparseable BY CONSTRUCTION, so this also fires on
+// an ORDINARY add or SHA-only change of any github-pinned dep, not just the genuine "lockfile lost
+// its nested version:" blind spot — that is intentional fail-closed coverage for FUTURE github-pinned
+// deps (AP #65), not a bug. The one carve-out is a pure REMOVAL (see below): dropping a dependency
+// cannot bring in unreviewed code, so this must not fail-closed on the way out.
+const isUnparseableGithubPin = (set) =>
+  !!set && [...set].some((v) => partsOf(v) === null && /github:|codeload\.github|git\+|\/tar\.gz\//.test(String(v)));
 
 // --- semver helpers -------------------------------------------------------
 const partsOf = (v) => {
@@ -75,15 +106,30 @@ const addVer = (map, name, ver) => {
 };
 
 // package.json: direct declared ranges (the belt).
-const readPkg = (path) => {
+// Status (AP #65 fail-closed in CI): 'unset' — the env VARIABLE itself is unset; 'unreadable' —
+// set, but the file could not be read; 'malformed' — read, but not valid JSON; 'ok' — valid JSON.
+// An explicit '{}' file — the shape CI writes for "the base branch has no package.json yet"
+// (aster-sports ci.yml:464, aster-io ci.yml:120) — is 'ok' with an empty map: a STATED fact,
+// unlike an unset variable or a missing file, which are UNKNOWN and must not read the same way.
+const loadPkg = (path) => {
+  if (!path) return { status: 'unset', map: new Map() };
+  let raw;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch (error) {
+    return { status: 'unreadable', code: error.code, map: new Map() };
+  }
+  let j;
+  try {
+    j = JSON.parse(raw);
+  } catch {
+    return { status: 'malformed', map: new Map() };
+  }
   const map = new Map();
-  const raw = read(path);
-  if (!raw.trim()) return map;
-  let j; try { j = JSON.parse(raw); } catch { return map; }
   for (const block of ['dependencies', 'devDependencies', 'optionalDependencies']) {
     for (const [n, v] of Object.entries(j[block] || {})) addVer(map, n, v);
   }
-  return map;
+  return { status: 'ok', map };
 };
 
 // npm package-lock.json v3: iterate the `packages` map; key node_modules/<name>.
@@ -115,45 +161,117 @@ const splitNV = (key) => {
   return { name: k.slice(0, at), ver: k.slice(at + 1) };
 };
 
-// pnpm-lock.yaml v9: the top-level `packages:` block lists every resolved
-// package as a `name@version:` key. Parse those keys (data, not YAML semantics).
+// pnpm-lock.yaml v9: the top-level `packages:` block lists every resolved package as a
+// `name@version:` key. For a github/tarball-pinned dep the key's version segment is a tarball URL
+// (`…/tar.gz/<sha>`) — NOT a semver — BUT pnpm ALSO writes the real semver as a nested `version:`
+// field inside each block (verified: `@aster/tokens` → `version: 0.3.1` sits right under the key).
+// We prefer that nested semver so isMajorBump() works generically for github pins (this is the root
+// fix for the pnpm blind spot); the key's URL is only the fallback when no nested version exists.
 const parsePnpm = (raw) => {
   const map = new Map();
   let inPackages = false;
+  let name = null, ver = null;                 // the package block currently being read
+  const flush = () => { if (name) addVer(map, name, ver); name = null; ver = null; };
   for (const line of raw.split('\n')) {
-    if (/^[A-Za-z']/.test(line)) {           // a top-level key (col 0)
+    if (/^[A-Za-z']/.test(line)) {             // a top-level key (col 0) — ends any open block
+      flush();
       inPackages = /^packages:\s*$/.test(line);
       continue;
     }
     if (!inPackages) continue;
-    // package keys sit at exactly 2-space indent and end with ':'
-    if (/^ {2}\S/.test(line) && /:\s*$/.test(line)) {
-      const key = line.trim().replace(/:\s*$/, '');
-      const nv = splitNV(key);
-      if (nv) addVer(map, nv.name, nv.ver);
+    if (/^ {2}\S/.test(line) && /:\s*$/.test(line)) {   // a package key at exactly 2-space indent
+      flush();
+      const nv = splitNV(line.trim().replace(/:\s*$/, ''));
+      name = nv ? nv.name : null;
+      ver = nv ? nv.ver : null;                // fallback = the key's version segment (may be a URL)
+      continue;
     }
+    // the nested `version:` field pnpm writes for every package — the real semver, even for a
+    // github/tarball pin — preferred over the key's URL so the bump size is knowable.
+    const m = name && line.match(/^ {4}version:\s*(\S+)/);
+    if (m) ver = m[1];
   }
+  flush();
   return map;
 };
 
-const parseLock = (path) => {
-  const raw = read(path);
-  if (!raw.trim()) return new Map();
-  return raw.trimStart().startsWith('{') ? parseNpm(raw) : parsePnpm(raw);
+// Lockfile status (I-2, AP #65 fail-closed in CI): 'unset' — the env VARIABLE itself is unset
+// (distinct from a var pointing at a real, readable, empty file, which stays 'empty' and is the
+// legitimate first-commit shape); 'unreadable' — set, but the file could not be read (wrong name,
+// wrong repo, ENOENT, EACCES, ...); 'empty' — read, but blank; 'unparseable' — non-blank content
+// that yields zero packages under either the npm or the pnpm reader (a wrong-format file sitting
+// at the wrong path); 'ok' — parsed at least one package.
+const loadLock = (path) => {
+  if (!path) return { status: 'unset', map: new Map() };
+  let raw;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch (error) {
+    return { status: 'unreadable', code: error.code, map: new Map() };
+  }
+  if (!raw.trim()) return { status: 'empty', map: new Map() };
+  const map = raw.trimStart().startsWith('{') ? parseNpm(raw) : parsePnpm(raw);
+  return map.size ? { status: 'ok', map } : { status: 'unparseable', map };
 };
 
 // --- comparison -----------------------------------------------------------
 // Merge lockfile (primary, resolved tree) + package.json (belt) into one map.
-const buildMap = (pkgPath, lockPath) => {
-  const map = parseLock(lockPath);
-  for (const [n, vers] of readPkg(pkgPath)) for (const v of vers) addVer(map, n, v);
+const buildMap = (pkgMap, lockMap) => {
+  const map = new Map(lockMap);
+  for (const [n, vers] of pkgMap) for (const v of vers) addVer(map, n, v);
   return map;
 };
 
-const base = buildMap(process.env.BASE_PKG, process.env.BASE_LOCK);
-const head = buildMap(process.env.HEAD_PKG, process.env.HEAD_LOCK);
-const labels = (process.env.LABELS || '').split(',').map((s) => s.trim());
-const OVERRIDE = 'dep-review-approved';
+const fail = (message) => {
+  console.log(`::error::${message}`);
+  process.exit(1);
+};
+
+const basePkg = loadPkg(process.env.BASE_PKG);
+const headPkg = loadPkg(process.env.HEAD_PKG);
+const baseLock = loadLock(process.env.BASE_LOCK);
+const headLock = loadLock(process.env.HEAD_LOCK);
+
+const inCI = process.env.GITHUB_ACTIONS === 'true';
+if (!inCI) {
+  console.log('dependency-gate: warning — GITHUB_ACTIONS is not "true" (running outside CI); this result is not a CI verdict.');
+} else {
+  // We must first KNOW each side's package.json (an unset/unreadable/malformed one is a hole of
+  // its own — the same class as an unset lockfile — because "no dependencies" and "unknown" must
+  // not read the same way). Checked before the lockfile requirement below, which depends on it.
+  const pkgProblem = (varName, pkg, path) => {
+    if (pkg.status === 'ok') return null;
+    const fix = `Fix this repo's .github/ci.yml wiring: set ${varName} to this side's ` +
+      "package.json (an explicit '{}' file is the legitimate first-commit signal when that side has none).";
+    if (pkg.status === 'unset') return `dependency-gate: ${varName} is unset. Refusing to treat an unknown package.json as having no dependencies (AP #65). ${fix}`;
+    if (pkg.status === 'unreadable') return `dependency-gate: ${varName}=${path} could not be read (${pkg.code}). ${fix}`;
+    return `dependency-gate: ${varName}=${path} could not be parsed as JSON. ${fix}`;
+  };
+  const headPkgProblem = pkgProblem('HEAD_PKG', headPkg, process.env.HEAD_PKG);
+  if (headPkgProblem) fail(headPkgProblem);
+  const basePkgProblem = pkgProblem('BASE_PKG', basePkg, process.env.BASE_PKG);
+  if (basePkgProblem) fail(basePkgProblem);
+
+  // Only a side whose package.json actually declares dependencies requires a parseable lockfile —
+  // that keeps the first-commit case (no package.json / no deps yet) working exactly as today.
+  const lockProblem = (varName, sidePkg, lock, path) => {
+    if (sidePkg.map.size === 0 || lock.status === 'ok') return null;
+    const side = varName === 'HEAD_LOCK' ? 'head' : 'base';
+    const fix = `Fix this repo's .github/ci.yml wiring: set ${varName} to this repo's real ` +
+      'lockfile (e.g. pnpm-lock.yaml for a pnpm repo, package-lock.json for npm).';
+    if (lock.status === 'unset') return `dependency-gate: ${varName} is unset, but the ${side} package.json declares dependencies. Refusing to treat an unknown lockfile as having none (AP #65). ${fix}`;
+    if (lock.status === 'unreadable') return `dependency-gate: ${varName}=${path} could not be read (${lock.code}), but the ${side} package.json declares dependencies. ${fix}`;
+    if (lock.status === 'empty') return `dependency-gate: ${varName}=${path} is empty, but the ${side} package.json declares dependencies — this is not the first-commit case. ${fix}`;
+    return `dependency-gate: ${varName}=${path} could not be parsed as an npm or pnpm lockfile, but the ${side} package.json declares dependencies. ${fix}`;
+  };
+  const headProblem = lockProblem('HEAD_LOCK', headPkg, headLock, process.env.HEAD_LOCK);
+  if (headProblem) fail(headProblem);
+  const baseProblem = lockProblem('BASE_LOCK', basePkg, baseLock, process.env.BASE_LOCK);
+  if (baseProblem) fail(baseProblem);
+}
+
+const base = buildMap(basePkg.map, baseLock.map);
+const head = buildMap(headPkg.map, headLock.map);
 
 const sameSet = (a, b) => a && b && a.size === b.size && [...a].every((v) => b.has(v));
 
@@ -169,12 +287,27 @@ for (const name of new Set([...base.keys(), ...head.keys()])) {
   if (b && b.size && h && h.size) {
     const bMax = maxVer(b), hMax = maxVer(h);
     if (isMajorBump(bMax, hMax)) reasons.push(`major bump ${bMax} → ${hMax}`);
-    // WX-P3-17: fail closed. If the version changed but either side is an
-    // unparseable specifier (git ref, dist-tag, workspace:/file:), we can't
-    // prove it's a safe bump — flag it for a human instead of silently passing.
-    else if (!partsOf(bMax) || !partsOf(hMax)) {
-      reasons.push(`unparseable version change ${bMax} → ${hMax} (fail-closed)`);
-    }
+  }
+  // BELT — a watchlisted cross-repo pinned dep (@aster/tokens, @aster/weather): ANY change is reported.
+  if (isWatched(name) && changed) reasons.push('watchlisted cross-repo pinned dep changed');
+  // SUSPENDERS — fail-closed on an unparseable github/tarball pin that changed (the pnpm blind spot,
+  // and — by construction — every github-pinned dep's package.json range). Only if nothing above
+  // already caught it: this is the catch-all so no github-pinned add/bump/SHA-change defaults open.
+  // EXEMPT a pure removal — the package is absent on the head side entirely: removing a dependency
+  // cannot bring in unreviewed code, so an unparseable pin going OUT doesn't need the human gate.
+  // This exemption is SUSPENDERS-only: BELT (watchlist) and SENSITIVE above are untouched by it, so
+  // removing @aster/tokens or @aster/weather, or any money/child/auth-adjacent package, is still reported.
+  const isPureRemoval = !h || h.size === 0;
+  if (changed && !reasons.length && !isPureRemoval && (isUnparseableGithubPin(b) || isUnparseableGithubPin(h))) {
+    reasons.push('github/tarball pin changed — resolved version unparseable to semver, opaque pin requires substantive review (AP #65)');
+  }
+  // WX-P3-17 (local, kept from this repo's earlier gate): a version change where either side is an
+  // unparseable specifier that SUSPENDERS does not already name (dist-tag, workspace:/file:, a bare
+  // git ref) cannot be proven a safe bump — report it for substantive review. Last, so the more
+  // specific reasons above win; never on an add or a removal (only when both sides are present).
+  if (changed && !reasons.length && b && b.size && h && h.size) {
+    const bMax = maxVer(b), hMax = maxVer(h);
+    if (!partsOf(bMax) || !partsOf(hMax)) reasons.push(`unparseable version change ${bMax} → ${hMax}`);
   }
   if (reasons.length) {
     const from = b && b.size ? maxVer(b) : '(added)';
@@ -189,18 +322,46 @@ if (flagged.length === 0) {
 }
 
 flagged.sort((a, b) => a.name.localeCompare(b.name));
-console.log('Dependency changes that require a human owner (resolved tree — direct + transitive):');
-for (const f of flagged) console.log(`  • ${f.name}  ${f.from} → ${f.to}   [${f.reasons.join('; ')}]`);
+console.log('Dependency changes requiring substantive review (resolved tree — direct + transitive):');
+// EVERY FIELD ENCODED, because every one of them comes out of the PR's own files. `name` is
+// an OBJECT KEY from head package.json (loadPkg) or a node_modules path from the lockfile
+// (parseNpm) — and a JSON key carries a literal newline through a \n escape, which
+// Object.entries hands straight on. `from`/`to` are version strings from the same files, put
+// through maxVer, which filters nothing: cmp returns 0 for anything unparseable, so the
+// reduce keeps the string as written. `reasons` embeds those same strings in `major bump
+// ${bMax} → ${hMax}`, so encoding the outer two and not the list would leave the hole open.
+//
+// Unencoded, a newline inside any of them ends this log line early and puts what follows at
+// COLUMN 0, where the Actions runner executes `::error::` or `::stop-commands::` as a
+// workflow command. A plain major bump is enough to reach this line — no need to match
+// SENSITIVE — so the whole primitive is one crafted dependency name away.
+//
+// The encoded listing remains part of dependency inspection even though manual labels
+// no longer control its exit. Log-injection regressions exercise all four fields.
+const lines = flagged.map((f) =>
+  `  • ${JSON.stringify(f.name)}  ${JSON.stringify(f.from)} → ${JSON.stringify(f.to)}   [${f.reasons.map((r) => JSON.stringify(r)).join('; ')}]`);
+for (const line of lines) console.log(line);
 
-if (labels.includes(OVERRIDE)) {
-  console.log(`\ndependency-gate: PASS — released by the '${OVERRIDE}' label (human sign-off recorded).`);
-  process.exit(0);
+// Step summary (local addition): the same encoded lines, inside a code fence longer than any
+// backtick run they contain, so a crafted name cannot close the fence and render as markdown.
+// The summary is never parsed for workflow commands; a write failure must not change the verdict.
+if (process.env.GITHUB_STEP_SUMMARY) {
+  const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) || []).map((m) => m.length))));
+  const fence = '`'.repeat(longest + 1);
+  const md = [
+    '### dependency-gate — changes requiring substantive review',
+    '',
+    `${flagged.length} major, money/child/auth-adjacent, watchlisted or opaque-pin change(s) in the resolved tree (direct + transitive). Reported, not blocking: required tests and blocking reviews remain authoritative (2026-10-04 directive).`,
+    '',
+    fence,
+    ...lines,
+    fence,
+    '',
+  ].join('\n');
+  try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, md); } catch (error) {
+    console.log(`dependency-gate: warning — could not write the step summary (${error.code || error.message}); the job log above is the record.`);
+  }
 }
 
-console.log(
-  `\n::error::Supply-chain faucet gate — this PR changes a major-version or ` +
-    `money/child/auth-adjacent dependency (direct OR transitive) and must NOT auto-merge ` +
-    `on green. A human owner reviews it, then applies the '${OVERRIDE}' label to release it. ` +
-    `(CLAUDE.md Phase 0.0 / PLAN_ON_TRUTH: gate by what the dependency touches, not the version-jump size.)`
-);
-process.exit(1);
+console.log('\ndependency-gate: PASS — resolved dependency changes inspected under automated policy; required tests and blocking reviews remain authoritative.');
+process.exit(0);
