@@ -58,5 +58,10 @@
     "forecast",
     "wmo",
     "aster-sports"
-  ]
+  ],
+  "pnpm": {
+    "overrides": {
+      "source-map-js": "^1.2.2"
+    }
+  }
 }
