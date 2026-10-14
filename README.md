@@ -7,8 +7,8 @@ and merge rationale.
 
 > **Aster Sports** is a creative company focused on **AAU basketball** whose platform is
 > **not limited to it** — the St. Patrick parish build is the proof, and it is this
-> package's largest consumer. Canonical estate truth lives in the `astersports.io` repo →
-> `docs/WHAT_IS_BUILT.md`.
+> package's largest consumer. Canonical estate truth: `astersports/aster-io` →
+> [`docs/WHAT_IS_BUILT.md`](https://github.com/astersports/aster-io/blob/main/docs/WHAT_IS_BUILT.md).
 >
 > **This is a shared library.** A change here reaches every consumer at their next re-pin,
 > so the bar is higher than in an app repo — and that is exactly why the release is gated
@@ -34,11 +34,10 @@ build step on install. Never pin a branch or a bare SHA.
 }
 ```
 
-### Who consumes it (verified 2026-08-17)
+### Who consumes it
 
-Four repos, **all four pinned to `#v0.6.0`**: `st-patricks-armonk` (13 source files),
-`aster-sports` (11), `nova-select` (7), `aster-io` (3). **`aster-studio` does not consume
-it** — no dependency entry; the only mentions there are historical planning docs.
+Four repos declare it: `st-patricks-armonk`, `aster-sports`, `nova-select`, `aster-io`. **`aster-studio` does not consume
+it.** Read each pin from the consumer's own `origin/main` `package.json` — never from this list.
 
 ## ⚠ What is NOT in this package
 
@@ -102,9 +101,10 @@ missing reading. **Render `null` as "—" / "N/A", never as `0`.**
 
 ### Time is absolute (epoch ms)
 
-`HourlyForecast.timestamp` is absolute epoch-ms — every request carries
+`HourlyForecast.timestamp` is absolute epoch-ms — the hourly forecast and nowcast requests carry
 `&timeformat=unixtime`, so hour matching is pure epoch arithmetic and **there is no
-host-timezone drift**. Pass an absolute ISO string (with offset or `Z`) to the matchers.
+host-timezone drift**. Pass an absolute ISO string (with offset or `Z`) to the matchers. (Current and daily
+conditions request `timezone=auto`; their sunrise/sunset are parsed with `parseOpenMeteoLocalTime`.)
 
 ### `opts.fetchImpl` — the SSRF boundary
 
