@@ -11,8 +11,8 @@ and merge rationale.
 > [`docs/WHAT_IS_BUILT.md`](https://github.com/astersports/aster-io/blob/main/docs/WHAT_IS_BUILT.md).
 >
 > **This is a shared library.** A change here reaches every consumer at their next re-pin,
-> so the bar is higher than in an app repo — and that is exactly why the release is gated
-> behind `[release-approved]` rather than shipping on merge.
+> so the bar is higher than in an app repo — and that is exactly why a minor or major release is
+> held behind `[release-approved]` rather than shipping on merge (a patch tags automatically).
 
 **This README is the reference.** Being a public package, the facts live here — consumers, the
 resilience chain, the Sky system, the versioning plan — rather than in a `docs/` directory that
@@ -197,7 +197,7 @@ each consumer.
 ## Versioning
 
 **major** = shape / icon-key / behaviour break (coordinate a consumer bump) · **minor** =
-additive · **patch** = behaviour-preserving fix. Full history in
+additive · **patch** = behaviour-preserving fix. On 0.x a break ships as a minor — and is called "breaking" anyway (as v0.6.0 was). Full history in
 [CHANGELOG.md](./CHANGELOG.md).
 
 **`v0.7.0` is already reserved** for the breaking nullable-`weatherCode` release (**CR-1**),
@@ -214,5 +214,5 @@ merely merging its PR.
 ```bash
 pnpm build   # tsc -> dist/ (COMMITTED — rebuild in the same commit as any src/ change)
 pnpm check   # typecheck only
-pnpm test    # vitest
+pnpm test    # vitest + the dependency-gate self-test (node --test)
 ```
