@@ -32,8 +32,9 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
    unknown; warning flags do not fire on `null`; consumers render `—`, never `0`.
 2. **`weatherCode` is the one exception, and it is a known seam** — still `number`, `?? 0` → "clear".
    Do not copy that pattern to any other field; closing it is the reserved v0.7.0 release (§5).
-3. **Timestamps are absolute epoch-ms.** Every request carries `&timeformat=unixtime`; match hours by
-   epoch arithmetic, never by parsing local time strings.
+3. **Hourly timestamps are absolute epoch-ms.** `fetchForecast` and `getNowcast` requests carry
+   `&timeformat=unixtime`; match hours by epoch arithmetic, never by parsing local time strings.
+   (`current`/`daily` request `timezone=auto` and parse sunrise/sunset with `parseOpenMeteoLocalTime` — never use that path for hour matching.)
 4. **Every fetch takes `opts.fetchImpl`** — the SSRF boundary. Keep the default host fixed and the
    coordinates numeric and bounds-checked.
 5. **Every fetch takes `opts.onError`, fired exactly once per ultimately-failed fetch** — after the
