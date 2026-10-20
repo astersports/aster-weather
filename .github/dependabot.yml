@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Major version updates are not opened (owner, 2026-10-20): they kept failing CI and waiting for a
+    # human. Move a major by hand. Dependabot alerts still report every vulnerability.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         update-types:
@@ -15,6 +20,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       github-actions-all:
         patterns:
