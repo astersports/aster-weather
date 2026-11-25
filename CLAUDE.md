@@ -93,3 +93,14 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 - **The six estate gates still apply** — [`AUTOMATION_CHARTER`](https://github.com/astersports/aster-io/blob/main/docs/AUTOMATION_CHARTER.md);
   here that means branch or tag deletion, force-push or history rewrite, and secrets. Ask first.
 - A planning or audit artifact goes in `docs/` and is pasted in full in chat, same turn.
+
+## 8. Planner and workers (owner, 2026-11-25)
+
+- **You are the planner**; the `worker` and `checker` agents in `.claude/agents/` are the crew.
+- **Start every job with one clear goal and how we will know it is done.** Split it into small tasks; hand each to `worker`.
+- **Send every worker result to `checker`.** On FAIL, send it back with the reason, up to three times; after the
+  third FAIL, do it yourself or bring it to Frank.
+- **You do the thinking and the final review; the workers do the work.** A checker PASS is one signal, not proof:
+  run §7's checks yourself before calling anything done. §3, §5 and the estate gates bind every worker too.
+- **When Frank corrects how a skill works, update that skill's `SKILL.md` in `.claude/skills/`** so the mistake
+  does not happen again, and tell him what you changed.
