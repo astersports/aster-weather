@@ -33,6 +33,10 @@ function freshOrTtl(freshFor, data, ttlMs) {
         return ttlMs;
     }
 }
+/**
+ * A reading is fresh only while the clock is at or after the fetch and less than the limit past it. A clock that stepped back (negative age) is not fresh, so a reading "from the future" is refetched, not served as fresh for as long as the step lasted (B-017).
+ */
+const isFresh = (age, limit) => age >= 0 && age < limit;
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export class WeatherCache {
     constructor(ttlMs, maxEntries = 200, behavior = {}) {
@@ -57,9 +61,9 @@ export class WeatherCache {
      * failure so the stale fallback fires. With SWR on, an expired-but-present
      * entry is returned immediately while a background refresh runs.
      */
-    async get(key, loader, empty, onError) {
+    async get(key, loader, empty, onError, now = Date.now) {
         const cached = this.store.get(key);
-        if (cached && Date.now() - cached.fetchedAt < this.ttlMs) {
+        if (cached && isFresh(now() - cached.fetchedAt, this.ttlMs)) {
             // LRU touch: re-insert so this key is now most-recently-used.
             this.store.delete(key);
             this.store.set(key, cached);
@@ -115,7 +119,7 @@ export class WeatherCache {
     async getWithMeta(key, loader, empty, onError, maxStaleMs = Infinity, now = Date.now, freshFor) {
         const cached = this.store.get(key);
         const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
-        if (cached && now() - cached.fetchedAt < freshMs) {
+        if (cached && isFresh(now() - cached.fetchedAt, freshMs)) {
             // LRU touch, as in get().
             this.store.delete(key);
             this.store.set(key, cached);
@@ -164,7 +168,7 @@ export class WeatherCache {
             return null;
         const freshMs = freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
         const age = now() - cached.fetchedAt;
-        if (age < freshMs)
+        if (isFresh(age, freshMs))
             return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
         if (age <= maxStaleMs)
             return { data: cached.data, fetchedAt: cached.fetchedAt, stale: true };

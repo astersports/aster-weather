@@ -4,7 +4,7 @@
  * Radar is asked once, here, and applied to the current reading and today's
  * daily cell with the pure functions in `radar.ts`.
  */
-import { type WeatherAlert } from "./nws/alerts.js";
+import { type AlertsReading, type WeatherAlert } from "./nws/alerts.js";
 import { type DailyResult } from "./nws/daily.js";
 import { type HourlyResult } from "./nws/hourly.js";
 import { type NowReading } from "./now.js";
@@ -24,6 +24,8 @@ export interface WeatherReport {
     hourly: HourlyResult | null;
     daily: DailyResult | null;
     alerts: WeatherAlert[] | null;
+    /** The same alerts with when they were fetched and whether they are stale. */
+    alertsReading: AlertsReading | null;
     radar: RadarRain | null;
     sun: SunTimes | null;
     moon: MoonPhase | null;

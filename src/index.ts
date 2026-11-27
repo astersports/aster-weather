@@ -83,7 +83,13 @@ export {
 export { getDaily, type DailyResult, type DayReading } from "./nws/daily.js";
 
 // Official alerts for a point
-export { getAlerts, ALERT_MAX_STALE_MS, type WeatherAlert } from "./nws/alerts.js";
+export {
+  getAlerts,
+  getAlertsReading,
+  ALERT_MAX_STALE_MS,
+  type WeatherAlert,
+  type AlertsReading,
+} from "./nws/alerts.js";
 
 // Radar rain at a point (may only add rain)
 export {

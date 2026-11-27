@@ -11,8 +11,8 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 
 ## 1. Never claim what this package does not contain
 
-- **It has (`v0.8.0`):** the NWS and NOAA engine (`getWeather` and its parts: now, hourly with the grid, seven-day, alerts, radar, sun and moon, event), the provenance `Stamp`, and the last-good store interface. Facts → [README](README.md).
-- **It does NOT have:** page parts (`v0.10.0`), icons for the newer conditions (`v0.9.0`), UV, outlooks and air quality (`v0.11.0`), notifications, or coverage outside the US. Grep `src/` first.
+- **It has (`v0.9.0`):** the NWS and NOAA engine (`getWeather` and its parts: now, hourly with the grid, seven-day, alerts with their fetch time, radar, sun and moon, event), the provenance `Stamp`, and the last-good store interface. Facts → [README](README.md).
+- **It does NOT have:** icons for the newer conditions (`v0.10.0`), page parts (`v0.11.0`), UV, outlooks and air quality (`v0.12.0`), notifications, or coverage outside the US. Grep `src/` first.
 - **Radar from a browser is unverified.** Never write that it works in a browser.
 - **Never write "three independent weather sources" or "most accurate".** Say official, measured,
   and how old.
@@ -71,7 +71,7 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
   the same commit. CI rebuilds and fails on any `dist/` drift.
 - **SemVer:** major = shape / icon-key / behaviour break · minor = additive · patch =
   behaviour-preserving fix. On 0.x a break ships as a minor — **call it "breaking" anyway**.
-- **`v0.7.0` was the nullable-`weatherCode` release; `v0.8.0` is the engine, and it is additive.**
+- **`v0.7.0` was the nullable-`weatherCode` release; `v0.8.0` is the engine; `v0.9.0` adds alert freshness. Both are additive.**
   Later versions: `docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`.
 - **Tags are cut by `auto-tag.yml` on merge.** A patch tags automatically; a minor/major is **held**
   until the merge commit carries `[release-approved]` (or a deliberate `force` dispatch). That

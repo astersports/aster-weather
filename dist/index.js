@@ -32,7 +32,7 @@ export { getHourly, GRID_RETRY_AFTER_MS, } from "./nws/hourly.js";
 // Seven-day forecast, one reading per date
 export { getDaily } from "./nws/daily.js";
 // Official alerts for a point
-export { getAlerts, ALERT_MAX_STALE_MS } from "./nws/alerts.js";
+export { getAlerts, getAlertsReading, ALERT_MAX_STALE_MS, } from "./nws/alerts.js";
 // Radar rain at a point (may only add rain)
 export { getRadarRain, MAX_FRAME_AGE_MS, RADAR_TIMEOUT_MS, RADAR_RETRY_AFTER_MS, } from "./radar.js";
 // Sun (today only) and moon (calculated)

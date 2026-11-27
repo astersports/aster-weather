@@ -22,6 +22,7 @@ import type {
   Stamp,
   SunTimes,
   WeatherAlert,
+  AlertsReading,
   WeatherReport,
   WeatherStore,
 } from "../index.js";
@@ -42,6 +43,7 @@ export type PublicTypeUses = [
   DayReading,
   DailyResult,
   WeatherAlert,
+  AlertsReading,
   EchoIntensity,
   RadarFrame,
   RadarRain,

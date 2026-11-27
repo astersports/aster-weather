@@ -47,6 +47,11 @@ function freshOrTtl<T>(freshFor: (data: T) => number, data: T, ttlMs: number): n
   }
 }
 
+/**
+ * A reading is fresh only while the clock is at or after the fetch and less than the limit past it. A clock that stepped back (negative age) is not fresh, so a reading "from the future" is refetched, not served as fresh for as long as the step lasted (B-017).
+ */
+const isFresh = (age: number, limit: number): boolean => age >= 0 && age < limit;
+
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -94,9 +99,10 @@ export class WeatherCache<T> {
     loader: () => Promise<T>,
     empty: T,
     onError?: (err: unknown) => void,
+    now: () => number = Date.now,
   ): Promise<T> {
     const cached = this.store.get(key);
-    if (cached && Date.now() - cached.fetchedAt < this.ttlMs) {
+    if (cached && isFresh(now() - cached.fetchedAt, this.ttlMs)) {
       // LRU touch: re-insert so this key is now most-recently-used.
       this.store.delete(key);
       this.store.set(key, cached);
@@ -163,7 +169,7 @@ export class WeatherCache<T> {
     const cached = this.store.get(key);
     const freshMs =
       cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
-    if (cached && now() - cached.fetchedAt < freshMs) {
+    if (cached && isFresh(now() - cached.fetchedAt, freshMs)) {
       // LRU touch, as in get().
       this.store.delete(key);
       this.store.set(key, cached);
@@ -218,7 +224,7 @@ export class WeatherCache<T> {
     const freshMs =
       freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
     const age = now() - cached.fetchedAt;
-    if (age < freshMs) return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
+    if (isFresh(age, freshMs)) return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
     if (age <= maxStaleMs) return { data: cached.data, fetchedAt: cached.fetchedAt, stale: true };
     return null;
   }

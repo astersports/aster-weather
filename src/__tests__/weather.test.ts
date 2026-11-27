@@ -8,7 +8,7 @@ import { clearStationsCache } from "../nws/observations.js";
 import { clearGridCache } from "../nws/grid.js";
 import { clearHourlyCache } from "../nws/hourly.js";
 import { clearDailyCache } from "../nws/daily.js";
-import { clearAlertsCache } from "../nws/alerts.js";
+import { clearAlertsCache, getAlertsReading } from "../nws/alerts.js";
 import { clearNowCache } from "../now.js";
 import { clearRadarCache } from "../radar.js";
 import { NWS_API } from "../nws/http.js";
@@ -118,6 +118,9 @@ describe("getWeather: the one-call report", () => {
     expect(w.place).toEqual({ lat: 41.03, lon: -73.76, timeZone: "America/New_York", city: "White Plains", state: "NY" });
     expect(w.now!.temperature).toBe(54);
     expect(w.alerts).toHaveLength(1);
+    const reading = await getAlertsReading(C, { fetchImpl: healthy().fetchImpl, now: () => NOW, radar: false });
+    expect(w.alertsReading).toEqual(reading);
+    expect(w.alerts).toEqual(w.alertsReading!.alerts);
     expect(w.moon!.name).toBe("Waning gibbous");
     expect(w.hourly!.hours).toHaveLength(30);
     expect(w.daily!.days[0]!.date).toBe("2026-11-27");
@@ -154,6 +157,7 @@ describe("getWeather: the one-call report", () => {
       onError: (err, ctx) => errors.push({ err, ctx }),
     }))!;
     expect(w.alerts).toBeNull();
+    expect(w.alertsReading).toBeNull();
     expect(w.now).not.toBeNull();
     expect(w.hourly).not.toBeNull();
     expect(w.daily).not.toBeNull();
