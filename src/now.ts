@@ -15,7 +15,7 @@ import { conditionFromNwsIcon, type Condition } from "./condition.js";
 import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import type { Coords } from "./types.js";
 import { getHourly, type HourReading } from "./nws/hourly.js";
-import { getPoint } from "./nws/point.js";
+import { lookupPoint } from "./nws/point.js";
 import { applyRadarToNow, startRadarRain } from "./radar.js";
 import {
   getLatestObservation,
@@ -168,22 +168,36 @@ async function load(coords: Coords, opts: EngineOptions, now: () => number): Pro
  * Current conditions for a coordinate: a measured station reading when one is
  * fresh enough, else the official forecast hour containing now. `null` when the
  * point is outside NWS coverage (no `onError`), or no reading is usable (fresh,
- * stale inside its bound, or last-good in the store). Never throws.
+ * stale inside its bound, or last-good in the store). When the point lookup
+ * failed, the last-good observed reading is returned as stored: no request, and
+ * no radar claim. Never throws.
  */
 export async function getNow(
   coords: Coords,
   opts: EngineOptions = {},
 ): Promise<NowReading | null> {
-  const point = await getPoint(coords, opts);
-  if (!point) return null;
+  const lookup = await lookupPoint(coords, opts);
+  if (lookup.status === "outside") return null;
+  const now = opts.now ?? Date.now;
+  if (lookup.status === "failed") return readStoredNow(coords, opts, now);
   // The radar, when asked, runs alongside the reading: started once the point is
   // known (so a point outside coverage asks nothing), before the reading loads.
   const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
   const reading = await readNow(coords, opts);
   if (!reading) return null;
   // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
-  const now = opts.now ?? Date.now;
   return radar ? applyRadarToNow(reading, await radar, now()) : reading;
+}
+
+/** The last-good reading from the store, marked stale, or `null` when none is usable. */
+async function readStoredNow(
+  coords: Coords,
+  opts: EngineOptions,
+  now: () => number,
+): Promise<NowReading | null> {
+  const storeKey = STORE_PREFIX + `${fmt(coords.lat)},${fmt(coords.lon)}`;
+  const last = await readLastGood<Body>(opts.store, storeKey, MAX_AGE_MS.now, now());
+  return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
 
 /**

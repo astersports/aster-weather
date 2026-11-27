@@ -9,7 +9,7 @@ import { FRESH_MS, MAX_AGE_MS } from "../provenance.js";
 import { readLastGood, writeLastGood } from "../store.js";
 import { conditionFromNwsIcon } from "../condition.js";
 import { cToF } from "../units.js";
-import { getPoint } from "./point.js";
+import { lookupPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 import { applyRadarToToday, startRadarRain } from "../radar.js";
 import { localDay } from "../localDay.js";
@@ -99,13 +99,18 @@ function withStamp(b, fetchedAt, stale) {
 /**
  * The seven-day forecast for a coordinate, one reading per date, or `null`
  * when the point is outside coverage or no reading is usable (fresh, stale
- * inside its bound, or last-good in the store). Never throws.
+ * inside its bound, or last-good in the store). When the point lookup failed,
+ * the last-good forecast is returned as stored: no request, and no radar (there
+ * is no time zone to place today). Never throws.
  */
 export async function getDaily(coords, opts = {}) {
-    const point = await getPoint(coords, opts);
-    if (!point)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
     const now = opts.now ?? Date.now;
+    if (lookup.status === "failed")
+        return storedDaily(coords, opts, now);
+    const point = lookup.point;
     // The radar, when asked, runs alongside the reading. It is for today's cell, so
     // it starts only with a usable time zone: today is the venue's date for now().
     const today = opts.radar === true && point.timeZone !== null ? localDay(now(), point.timeZone) : null;
@@ -133,8 +138,16 @@ async function readDaily(coords, point, opts, now) {
     }, null, bindOnError(opts, "getDaily", lat, lon), MAX_AGE_MS.daily, now);
     if (meta.data)
         return withStamp(meta.data, meta.fetchedAt, meta.stale);
+    return readStoredDaily(storeKey, opts, now);
+}
+/** The last-good forecast from the store, marked stale, or `null` when none is usable. */
+async function readStoredDaily(storeKey, opts, now) {
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.daily, now());
     return last ? withStamp(last.data, last.fetchedAt, true) : null;
+}
+/** The failed-lookup path of `getDaily`: the stored forecast only. */
+function storedDaily(coords, opts, now) {
+    return readStoredDaily(STORE_PREFIX + `${fmt(coords.lat)},${fmt(coords.lon)}`, opts, now);
 }
 /** Test hook: clear every cached daily forecast. */
 export function clearDailyCache() {

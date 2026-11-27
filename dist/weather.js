@@ -7,7 +7,7 @@
 import { getAlerts } from "./nws/alerts.js";
 import { getDaily } from "./nws/daily.js";
 import { getHourly } from "./nws/hourly.js";
-import { getPoint } from "./nws/point.js";
+import { lookupPoint } from "./nws/point.js";
 import { getNow } from "./now.js";
 import { getRadarRain, applyRadarToNow, applyRadarToToday } from "./radar.js";
 import { getMoon, getSun } from "./astro.js";
@@ -22,16 +22,20 @@ async function part(load) {
     }
 }
 /**
- * Every part of the engine for a coordinate, or `null` when the point is invalid,
- * outside NWS coverage (404), or its lookup failed. In those cases no other request
- * is made. Radar is asked once unless `radar: false`. No `onError` of its own; a
- * failing part reports through its own loader. Never throws.
+ * Every part of the engine for a coordinate, or `null` when the point is invalid
+ * or outside NWS coverage (404). Those cases make no other request. When the
+ * point lookup failed, the report still comes: the place has no time zone, city
+ * or state, the sun is `null`, and the forecast parts come from their stores
+ * (or `null`). Alerts and radar are asked as usual. Radar is asked once unless
+ * `radar: false`. No `onError` of its own; a failing part reports through its own
+ * loader, and a failed point lookup reports once through `getPoint`. Never throws.
  */
 export async function getWeather(coords, opts = {}) {
     const nowMs = opts.now?.() ?? Date.now();
-    const point = await part(() => getPoint(coords, opts));
-    if (!point)
+    const lookup = await part(() => lookupPoint(coords, opts));
+    if (!lookup || lookup.status === "outside")
         return null;
+    const point = lookup.status === "ok" ? lookup.point : null;
     // Each part is asked without radar, so the radar is asked only here, once.
     const partOpts = { ...opts, radar: false };
     const wantRadar = opts.radar !== false;
@@ -40,19 +44,20 @@ export async function getWeather(coords, opts = {}) {
         part(() => getHourly(coords, partOpts)),
         part(() => getDaily(coords, partOpts)),
         part(() => getAlerts(coords, partOpts)),
-        part(() => getSun(coords, partOpts)),
+        point ? part(() => getSun(coords, partOpts)) : Promise.resolve(null),
         wantRadar ? part(() => getRadarRain(coords, opts)) : Promise.resolve(null),
     ]);
-    const today = point.timeZone === null ? null : localDay(nowMs, point.timeZone);
+    const timeZone = point?.timeZone ?? null;
+    const today = timeZone === null ? null : localDay(nowMs, timeZone);
     // The radar claim is made now, after every part has loaded: a frame's age is taken at that moment (B-013).
     const claimAt = (opts.now ?? Date.now)();
     return {
         place: {
             lat: coords.lat,
             lon: coords.lon,
-            timeZone: point.timeZone,
-            city: point.city,
-            state: point.state,
+            timeZone,
+            city: point?.city ?? null,
+            state: point?.state ?? null,
         },
         now: now && radar ? applyRadarToNow(now, radar, claimAt) : now,
         hourly,

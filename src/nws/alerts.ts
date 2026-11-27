@@ -9,7 +9,7 @@ import { RESILIENT_CACHE, bindOnError, isValidCoord } from "../helpers.js";
 import { FRESH_MS, type EngineOptions } from "../provenance.js";
 import type { Coords } from "../types.js";
 import { NWS_API, nwsJson } from "./http.js";
-import { getPoint } from "./point.js";
+import { lookupPoint } from "./point.js";
 
 export interface WeatherAlert {
   id: string;
@@ -136,16 +136,17 @@ function onsetAsc(x: number | null, y: number | null): number {
 /**
  * Active official alerts for a point, highest level first, then earliest onset
  * (a null onset last). `[]` means none are active. `null` means outside NWS
- * coverage, or the lookup failed with no list young enough to serve. Never
- * throws; `onError` fires once per ultimately-failed alerts fetch.
+ * coverage, or the lookup failed with no list young enough to serve. A failed
+ * point lookup does not stop the alerts request: it needs only the coordinates.
+ * Never throws; `onError` fires once per ultimately-failed alerts fetch.
  */
 export async function getAlerts(
   coords: Coords,
   opts: EngineOptions = {},
 ): Promise<WeatherAlert[] | null> {
   const { lat, lon } = coords;
-  const point = await getPoint(coords, opts);
-  if (point === null) return null;
+  const lookup = await lookupPoint(coords, opts);
+  if (lookup.status === "outside") return null;
   if (!isValidCoord(lat, lon)) return null;
 
   const now = opts.now ?? Date.now;

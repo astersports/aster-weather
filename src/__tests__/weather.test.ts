@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getWeather } from "../weather.js";
 import { localDay } from "../localDay.js";
@@ -418,5 +418,63 @@ describe("B-013 through getWeather: a frame that ages out while the report loads
     expect(out.fetchedAt).toBe(NOW);
     expect(out.now).toMatchObject({ rainSource: "radar", radarAt: NOW - (20 * 60_000 - 1000) });
     expect(out.daily!.days[0]).toMatchObject({ rainSource: "radar" });
+  });
+});
+
+/** A store that keeps every write, so a healthy report can seed the last-good readings. */
+function lastGoodStore(): WeatherStore {
+  const data = new Map<string, string>();
+  return {
+    async get(key) {
+      return data.has(key) ? data.get(key)! : null;
+    },
+    async set(key, value) {
+      data.set(key, value);
+    },
+  };
+}
+
+const NWS_FORECAST_CALLS = [STATIONS_URL, OBS_KHPN, HOURLY_URL, GRID_URL, FORECAST_URL];
+
+describe("getWeather — a failed point lookup still gives a report", () => {
+  it("points 500 with a stored report: the stored parts come back stale, the place is empty, the sun is null, and only the points URL and alerts and radar are asked", async () => {
+    const store = lastGoodStore();
+    await getWeather(C, { fetchImpl: healthy().fetchImpl, store, now: () => NOW });
+    resetCaches();
+
+    const h = healthy({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const w = (await getWeather(C, { fetchImpl: h.fetchImpl, store, now: () => NOW, onError }))!;
+    expect(w).not.toBeNull();
+    expect(w.place).toEqual({ lat: 41.03, lon: -73.76, timeZone: null, city: null, state: null });
+    expect(w.now!.stamp.stale).toBe(true);
+    expect(w.now!.stamp.fetchedAt).toBe(NOW);
+    expect(w.hourly!.stamp.stale).toBe(true);
+    expect(w.daily!.stamp.stale).toBe(true);
+    expect(w.alerts).toHaveLength(1);
+    expect(w.sun).toBeNull();
+    expect(w.moon).not.toBeNull();
+
+    expect(h.calls.filter((u) => u === POINT_URL)).toHaveLength(2);
+    expect(h.calls.filter((u) => NWS_FORECAST_CALLS.includes(u))).toHaveLength(0);
+    expect(h.calls.filter(isRadar)).toHaveLength(1);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("points 500 with no store: a report with now, hourly and daily all null, and alerts still given", async () => {
+    const h = healthy({ [POINT_URL]: fail(500) });
+    const w = (await getWeather(C, { fetchImpl: h.fetchImpl, now: () => NOW }))!;
+    expect(w).not.toBeNull();
+    expect(w.now).toBeNull();
+    expect(w.hourly).toBeNull();
+    expect(w.daily).toBeNull();
+    expect(w.alerts).toHaveLength(1);
+    expect(w.sun).toBeNull();
+  });
+
+  it("points 404: null, and the points URL is the only request", async () => {
+    const h = healthy({ [POINT_URL]: fail(404) });
+    expect(await getWeather(C, { fetchImpl: h.fetchImpl, now: () => NOW })).toBeNull();
+    expect(h.calls).toEqual([POINT_URL]);
   });
 });

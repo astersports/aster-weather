@@ -12,7 +12,7 @@ import { conditionFromNwsIcon, type Condition } from "../condition.js";
 import { cToF, kmhToMph, mmToIn, mToMi } from "../units.js";
 import type { Coords } from "../types.js";
 import { getGrid, gridValueAt, type GridBlock } from "./grid.js";
-import { getPoint, type NwsPoint } from "./point.js";
+import { lookupPoint, type NwsPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 
 /** One hour of the forecast. Every measurement is `null` when NWS gave none. */
@@ -207,18 +207,21 @@ function withStamp(b: HourlyBody, fetchedAt: number, stale: boolean): HourlyResu
 /**
  * The hourly forecast for a coordinate, joined with the grid, or `null` when
  * the point is outside coverage or no reading is usable (fresh, stale inside
- * its bound, or last-good in the store). Never throws.
+ * its bound, or last-good in the store). When the point lookup failed, the
+ * last-good reading is returned as stored: no request, no grid. Never throws.
  */
 export async function getHourly(
   coords: Coords,
   opts: EngineOptions = {},
 ): Promise<HourlyResult | null> {
   const { lat, lon } = coords;
-  const point = await getPoint(coords, opts);
-  if (!point) return null;
+  const lookup = await lookupPoint(coords, opts);
+  if (lookup.status === "outside") return null;
   const now = opts.now ?? Date.now;
   const key = `${fmt(lat)},${fmt(lon)}`;
   const storeKey = STORE_PREFIX + key;
+  if (lookup.status === "failed") return storedHourly(storeKey, opts, now);
+  const point = lookup.point;
 
   const meta = await hourlyCache.getWithMeta(
     key,
@@ -235,6 +238,15 @@ export async function getHourly(
   );
   if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
 
+  return storedHourly(storeKey, opts, now);
+}
+
+/** The last-good hourly reading from the store, marked stale, or `null` when none is usable. */
+async function storedHourly(
+  storeKey: string,
+  opts: EngineOptions,
+  now: () => number,
+): Promise<HourlyResult | null> {
   const last = await readLastGood<HourlyBody>(opts.store, storeKey, MAX_AGE_MS.hourly, now());
   return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }

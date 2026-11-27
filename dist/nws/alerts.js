@@ -8,7 +8,7 @@ import { WeatherCache } from "../cache.js";
 import { RESILIENT_CACHE, bindOnError, isValidCoord } from "../helpers.js";
 import { FRESH_MS } from "../provenance.js";
 import { NWS_API, nwsJson } from "./http.js";
-import { getPoint } from "./point.js";
+import { lookupPoint } from "./point.js";
 /** Longest a failed refresh may serve the last list. */
 export const ALERT_MAX_STALE_MS = 60 * 60_000;
 const alertCache = new WeatherCache(FRESH_MS.alerts, 200, RESILIENT_CACHE);
@@ -109,13 +109,14 @@ function onsetAsc(x, y) {
 /**
  * Active official alerts for a point, highest level first, then earliest onset
  * (a null onset last). `[]` means none are active. `null` means outside NWS
- * coverage, or the lookup failed with no list young enough to serve. Never
- * throws; `onError` fires once per ultimately-failed alerts fetch.
+ * coverage, or the lookup failed with no list young enough to serve. A failed
+ * point lookup does not stop the alerts request: it needs only the coordinates.
+ * Never throws; `onError` fires once per ultimately-failed alerts fetch.
  */
 export async function getAlerts(coords, opts = {}) {
     const { lat, lon } = coords;
-    const point = await getPoint(coords, opts);
-    if (point === null)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
     if (!isValidCoord(lat, lon))
         return null;

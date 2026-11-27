@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { getDaily, clearDailyCache } from "../nws/daily.js";
 import { clearPointCache } from "../nws/point.js";
 import { clearHourlyCache } from "../nws/hourly.js";
+import { setRetrySleep } from "../helpers.js";
 import { NWS_API } from "../nws/http.js";
 import type { WeatherStore } from "../store.js";
 import type { FetchImpl, WeatherErrorContext } from "../types.js";
@@ -322,5 +323,69 @@ describe("getDaily — last-good store", () => {
     const pending = getDaily(COORDS, { fetchImpl, store, now: () => later });
     await vi.advanceTimersByTimeAsync(1000);
     expect(await pending).toBeNull();
+  });
+});
+
+describe("getDaily — a failed point lookup serves the stored forecast", () => {
+  beforeEach(() => {
+    setRetrySleep(async () => {});
+    clearPointCache();
+    clearDailyCache();
+  });
+  afterEach(() => setRetrySleep(null));
+
+  /** A good forecast stored at `at`; then the caches are cleared so the next call starts cold. */
+  async function storeAt(store: WeatherStore, at: number) {
+    const r = await getDaily(COORDS, { fetchImpl: happy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    clearPointCache();
+    clearDailyCache();
+    return r!;
+  }
+
+  it("cold cache, points 500, a one-hour-old stored forecast: served stale with its own fetchedAt, and only the points URL is asked", async () => {
+    const store = memoryStore();
+    const stored = await storeAt(store, NOW - HOUR);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW });
+    expect(r).not.toBeNull();
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW - HOUR);
+    expect(r!.days).toEqual(stored.days);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it("points 500 with no store: null, and only the points URL is asked", async () => {
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("points 500 with a stored forecast older than its bound: null", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 25 * HOUR);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+  });
+
+  it("points 500 with radar on: the stored forecast is served with no radar request and no rainSource", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - HOUR);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW, radar: true });
+    expect(r).not.toBeNull();
+    expect(r!.days.some((d) => d.rainSource !== undefined)).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("points 404 with a stored forecast: null, and the store is not read", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - HOUR);
+    const get = vi.spyOn(store, "get");
+    const f = router({ [POINT_URL]: fail(404) });
+    expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    expect(f.calls).toHaveLength(1);
   });
 });

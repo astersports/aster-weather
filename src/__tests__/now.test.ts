@@ -327,3 +327,63 @@ describe("getNow — every failed request is reported once (B-012, B-007)", () =
     expect(calls.filter((u) => u === HOURLY_URL)).toHaveLength(2);
   });
 });
+
+describe("getNow — a failed point lookup serves the stored reading", () => {
+  /** A good observed reading stored at `at`; the caches are then cleared so the next call starts cold. */
+  async function storeAt(store: WeatherStore, at: number) {
+    const r = await getNow(COORDS, { fetchImpl: healthy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    clearNowCache();
+    clearStationsCache();
+    clearPointCache();
+    clearGridCache();
+    clearHourlyCache();
+    return r!;
+  }
+
+  it("cold cache, points 500, a one-hour-old stored reading: served stale with its own fetchedAt, and only the points URL is asked", async () => {
+    const store = memoryStore();
+    const stored = await storeAt(store, NOW - 3600_000);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW });
+    expect(r).not.toBeNull();
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW - 3600_000);
+    expect(r!.temperature).toBe(stored.temperature);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it("points 500 with no store: null, and only the points URL is asked", async () => {
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("points 500 with a stored reading older than its bound: null", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 4 * 3600_000);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+  });
+
+  it("points 500 with radar on: the stored reading is served with no radar request and no rainSource", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 3600_000);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW, radar: true });
+    expect(r).not.toBeNull();
+    expect(r!.rainSource).toBeUndefined();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("points 404 with a stored reading: null, and the store is not read", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 3600_000);
+    const get = vi.spyOn(store, "get");
+    const f = router({ [POINT_URL]: fail(404) });
+    expect(await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    expect(f.calls).toHaveLength(1);
+  });
+});

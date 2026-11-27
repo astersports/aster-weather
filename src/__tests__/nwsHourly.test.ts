@@ -386,3 +386,59 @@ describe("getHourly — a failed grid is asked again after five minutes (B-003)"
     expect((await getNow(COORDS, opts))!.temperature).toBe(53);
   });
 });
+
+describe("getHourly — a failed point lookup serves the stored reading", () => {
+  beforeEach(() => {
+    setRetrySleep(async () => {});
+    clearPointCache();
+    clearGridCache();
+    clearHourlyCache();
+  });
+  afterEach(() => setRetrySleep(null));
+
+  /** A good reading stored at `at`; then every cache is cleared so the next call starts cold. */
+  async function storeAt(store: WeatherStore, at: number) {
+    const r = await getHourly(COORDS, { fetchImpl: happy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    clearPointCache();
+    clearGridCache();
+    clearHourlyCache();
+    return r!;
+  }
+
+  it("cold cache, points 500, a one-hour-old stored reading: served stale with its own fetchedAt, and only the points URL is asked", async () => {
+    const store = memoryStore();
+    const stored = await storeAt(store, NOW - 3600_000);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getHourly(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW });
+    expect(r).not.toBeNull();
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW - 3600_000);
+    expect(r!.hours).toEqual(stored.hours);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it("points 500 with no store: null, and only the points URL is asked", async () => {
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getHourly(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("points 500 with a stored reading older than its bound: null", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 13 * 3600_000);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getHourly(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+  });
+
+  it("points 404 with a stored reading: null, and the store is not read", async () => {
+    const store = memoryStore();
+    await storeAt(store, NOW - 3600_000);
+    const get = vi.spyOn(store, "get");
+    const f = router({ [POINT_URL]: fail(404) });
+    expect(await getHourly(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    expect(f.calls).toHaveLength(1);
+  });
+});

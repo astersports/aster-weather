@@ -14,7 +14,7 @@ import { readLastGood, writeLastGood } from "./store.js";
 import { conditionFromNwsIcon } from "./condition.js";
 import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import { getHourly } from "./nws/hourly.js";
-import { getPoint } from "./nws/point.js";
+import { lookupPoint } from "./nws/point.js";
 import { applyRadarToNow, startRadarRain } from "./radar.js";
 import { getLatestObservation, getStations, } from "./nws/observations.js";
 /** The longest age an observation may have and still be the current reading. */
@@ -120,12 +120,17 @@ async function load(coords, opts, now) {
  * Current conditions for a coordinate: a measured station reading when one is
  * fresh enough, else the official forecast hour containing now. `null` when the
  * point is outside NWS coverage (no `onError`), or no reading is usable (fresh,
- * stale inside its bound, or last-good in the store). Never throws.
+ * stale inside its bound, or last-good in the store). When the point lookup
+ * failed, the last-good observed reading is returned as stored: no request, and
+ * no radar claim. Never throws.
  */
 export async function getNow(coords, opts = {}) {
-    const point = await getPoint(coords, opts);
-    if (!point)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
+    const now = opts.now ?? Date.now;
+    if (lookup.status === "failed")
+        return readStoredNow(coords, opts, now);
     // The radar, when asked, runs alongside the reading: started once the point is
     // known (so a point outside coverage asks nothing), before the reading loads.
     const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
@@ -133,8 +138,13 @@ export async function getNow(coords, opts = {}) {
     if (!reading)
         return null;
     // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
-    const now = opts.now ?? Date.now;
     return radar ? applyRadarToNow(reading, await radar, now()) : reading;
+}
+/** The last-good reading from the store, marked stale, or `null` when none is usable. */
+async function readStoredNow(coords, opts, now) {
+    const storeKey = STORE_PREFIX + `${fmt(coords.lat)},${fmt(coords.lon)}`;
+    const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.now, now());
+    return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
 /**
  * The reading from the cache, else from the last-good store. Neither copy

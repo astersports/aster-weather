@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { getPoint, evictPoint, clearPointCache } from "../nws/point.js";
+import {
+  getPoint,
+  evictPoint,
+  clearPointCache,
+  lookupPoint,
+  POINT_RETRY_AFTER_MS,
+} from "../nws/point.js";
 import { nwsJson, NWS_API } from "../nws/http.js";
+import { setRetrySleep } from "../helpers.js";
 import type { FetchImpl, WeatherErrorContext } from "../types.js";
 
 const points = JSON.parse(
@@ -175,5 +182,157 @@ describe("nwsJson — transport", () => {
     await expect(nwsJson(`${NWS_API}/x`, { fetchImpl: stub(503).fetchImpl })).rejects.toThrow(
       "HTTP 503",
     );
+  });
+});
+
+/**
+ * A stub whose status depends on the URL. `ok` answers the fixture; the status
+ * for each URL is read at call time, so a test can change it between calls.
+ */
+function byUrl(statusOf: (url: string) => number) {
+  const calls: string[] = [];
+  const fetchImpl: FetchImpl = async (url) => {
+    calls.push(url);
+    const status = statusOf(url);
+    return { ok: status >= 200 && status < 300, status, json: async () => points };
+  };
+  return { calls, fetchImpl };
+}
+
+const POINT_URL = `${NWS_API}/points/41.03,-73.76`;
+const OTHER = { lat: 40.7, lon: -74.0 };
+const OTHER_URL = `${NWS_API}/points/40.7,-74`;
+const T0 = Date.parse("2026-11-27T13:55:00Z");
+const DAY = 24 * 3600_000;
+
+describe("lookupPoint — outside, failed and ok are told apart", () => {
+  beforeEach(() => setRetrySleep(async () => {}));
+  afterEach(() => setRetrySleep(null));
+
+  it("is ok with the point for a good answer", async () => {
+    const { fetchImpl } = stub(200);
+    const r = await lookupPoint(COORDS, { fetchImpl });
+    expect(r.status).toBe("ok");
+    if (r.status === "ok") expect(r.point.timeZone).toBe("America/New_York");
+  });
+
+  it("is outside for a 404, caches it, and reports nothing", async () => {
+    const { calls, fetchImpl } = stub(404);
+    const onError = vi.fn();
+    expect(await lookupPoint(COORDS, { fetchImpl, onError })).toEqual({ status: "outside" });
+    expect(await lookupPoint(COORDS, { fetchImpl, onError })).toEqual({ status: "outside" });
+    expect(calls).toHaveLength(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("is failed for a 500 after one retry, reported once as getPoint, and not cached", async () => {
+    const { calls, fetchImpl } = stub(500);
+    const onError = vi.fn();
+    expect(await lookupPoint(COORDS, { fetchImpl, onError })).toEqual({ status: "failed" });
+    expect(calls.map((c) => c.url)).toEqual([POINT_URL, POINT_URL]);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]![1]).toMatchObject({ call: "getPoint", lat: 41.03, lon: -73.76 });
+  });
+
+  it("is outside for invalid coordinates, with no request", async () => {
+    const { calls, fetchImpl } = stub(200);
+    expect(await lookupPoint({ lat: 91, lon: -73.76 }, { fetchImpl })).toEqual({ status: "outside" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("getPoint is null for both outside and failed", async () => {
+    expect(await getPoint(COORDS, { fetchImpl: stub(404).fetchImpl })).toBeNull();
+    expect(await getPoint(COORDS, { fetchImpl: stub(500).fetchImpl })).toBeNull();
+  });
+});
+
+describe("the hold after a failed lookup", () => {
+  beforeEach(() => {
+    clearPointCache();
+    setRetrySleep(async () => {});
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => {
+    setRetrySleep(null);
+    vi.useRealTimers();
+  });
+
+  it("answers failed at once, with no request and no onError, within thirty seconds", async () => {
+    const s = { status: 500 };
+    const { calls, fetchImpl } = byUrl(() => s.status);
+    const onError = vi.fn();
+    await lookupPoint(COORDS, { fetchImpl, onError });
+    expect(calls).toHaveLength(2);
+
+    vi.setSystemTime(T0 + 10_000);
+    expect(await lookupPoint(COORDS, { fetchImpl, onError })).toEqual({ status: "failed" });
+    expect(calls).toHaveLength(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("still holds at 29.999 s, and at exactly 30 s asks again", async () => {
+    const s = { status: 500 };
+    const { calls, fetchImpl } = byUrl(() => s.status);
+    await lookupPoint(COORDS, { fetchImpl });
+    expect(calls).toHaveLength(2);
+
+    vi.setSystemTime(T0 + POINT_RETRY_AFTER_MS - 1);
+    expect(await lookupPoint(COORDS, { fetchImpl })).toEqual({ status: "failed" });
+    expect(calls).toHaveLength(2);
+
+    vi.setSystemTime(T0 + POINT_RETRY_AFTER_MS);
+    s.status = 200;
+    const r = await lookupPoint(COORDS, { fetchImpl });
+    expect(r.status).toBe("ok");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("holds each coordinate separately", async () => {
+    const { calls, fetchImpl } = byUrl((url) => (url === POINT_URL ? 500 : 200));
+    await lookupPoint(COORDS, { fetchImpl });
+    expect(calls).toHaveLength(2);
+
+    expect((await lookupPoint(OTHER, { fetchImpl })).status).toBe("ok");
+    expect(calls).toEqual([POINT_URL, POINT_URL, OTHER_URL]);
+
+    expect(await lookupPoint(COORDS, { fetchImpl })).toEqual({ status: "failed" });
+    expect(calls).toHaveLength(3);
+  });
+
+  it("clearPointCache lifts the hold", async () => {
+    const { calls, fetchImpl } = byUrl(() => 500);
+    await lookupPoint(COORDS, { fetchImpl });
+    clearPointCache();
+    await lookupPoint(COORDS, { fetchImpl });
+    expect(calls).toHaveLength(4);
+  });
+
+  it("evictPoint does not lift the hold", async () => {
+    const { calls, fetchImpl } = byUrl(() => 500);
+    await lookupPoint(COORDS, { fetchImpl });
+    evictPoint(COORDS);
+    vi.setSystemTime(T0 + 10_000);
+    expect(await lookupPoint(COORDS, { fetchImpl })).toEqual({ status: "failed" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a failed refresh of a cached point serves that point as ok, and holds without a request", async () => {
+    const s = { status: 200 };
+    const { calls, fetchImpl } = byUrl(() => s.status);
+    const onError = vi.fn();
+    await lookupPoint(COORDS, { fetchImpl, onError });
+    expect(calls).toHaveLength(1);
+
+    vi.setSystemTime(T0 + DAY + 3600_000);
+    s.status = 500;
+    const served = await lookupPoint(COORDS, { fetchImpl, onError });
+    expect(served.status).toBe("ok");
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(3);
+
+    const again = await lookupPoint(COORDS, { fetchImpl, onError });
+    expect(again).toEqual(served);
+    expect(calls).toHaveLength(3);
   });
 });

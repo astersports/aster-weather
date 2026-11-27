@@ -1,13 +1,46 @@
 /**
  * Point lookup: `/points/{lat},{lon}` → the forecast URLs, the time zone, the
  * place, the radar station and today's sun data. A point outside NWS coverage
- * answers 404, which is cached as `null` without `onError`.
+ * answers 404: a normal answer, cached as "outside" without `onError`. A lookup
+ * that fails (500, timeout) is reported once through `onError`, is not cached,
+ * and holds that coordinate for `POINT_RETRY_AFTER_MS` (no request in the hold).
  */
 import { WeatherCache } from "../cache.js";
-import { RESILIENT_CACHE, bindOnError, isValidCoord } from "../helpers.js";
+import { RESILIENT_CACHE, bindOnError, isValidCoord, safeReport } from "../helpers.js";
 import { FRESH_MS } from "../provenance.js";
 import { NWS_API, nwsJson } from "./http.js";
-const pointCache = new WeatherCache(FRESH_MS.point, 200, RESILIENT_CACHE);
+/** The answer for a 404: outside NWS coverage. A failed lookup stores nothing. */
+const OUTSIDE = "outside";
+/** After a failed lookup, a coordinate is not asked again for this long. */
+export const POINT_RETRY_AFTER_MS = 30_000;
+/** Holds and last answers are bounded like the cache: 200 coordinates. */
+const TRACKED_MAX = 200;
+const pointCache = new WeatherCache(FRESH_MS.point, TRACKED_MAX, RESILIENT_CACHE);
+/** Failed coordinates: key → epoch ms of the failure. Cleared by a success or `clearPointCache`. */
+const holds = new Map();
+/**
+ * The last answer read for each coordinate. The cache keeps it only for its own
+ * stale-on-error fallback, which a held lookup cannot reach without a request.
+ */
+const lastValue = new Map();
+/** Insert or refresh `key`, dropping the oldest entries past the bound. */
+function remember(map, key, value) {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > TRACKED_MAX) {
+        const oldest = map.keys().next().value;
+        if (oldest === undefined)
+            break;
+        map.delete(oldest);
+    }
+}
+function toLookup(value) {
+    if (value === null)
+        return { status: "failed" };
+    if (value === OUTSIDE)
+        return { status: "outside" };
+    return { status: "ok", point: value };
+}
 /** At most four decimals, trailing zeros dropped: 41.03 not 41.0300. */
 const fmt = (v) => String(Number(v.toFixed(4)));
 const pointKey = (c) => `${fmt(c.lat)},${fmt(c.lon)}`;
@@ -62,28 +95,56 @@ function parsePoint(body) {
     };
 }
 /**
- * The NWS point for a coordinate, or `null` when the point is invalid, outside
- * NWS coverage (404), or the lookup failed. Never throws.
+ * The NWS point for a coordinate, with the reason it is missing told apart.
+ * `outside`: invalid coordinates, or a 404 (no `onError`, cached as a normal
+ * answer). `failed`: the lookup could not be read; `onError` fires once, the
+ * coordinate is held for `POINT_RETRY_AFTER_MS` with no request, and a stored
+ * point the cache still holds comes back as `ok`. Never throws.
  */
-export async function getPoint(coords, opts = {}) {
+export async function lookupPoint(coords, opts = {}) {
     const { lat, lon } = coords;
     if (!isValidCoord(lat, lon))
-        return null;
+        return { status: "outside" };
     const key = pointKey(coords);
+    const now = opts.now ?? Date.now;
+    const heldAt = holds.get(key);
+    if (heldAt !== undefined && now() - heldAt < POINT_RETRY_AFTER_MS) {
+        return toLookup(lastValue.get(key) ?? null);
+    }
     const url = `${NWS_API}/points/${key}`;
-    return pointCache.get(key, async () => {
+    const report = bindOnError(opts, "getPoint", lat, lon);
+    const value = await pointCache.get(key, async () => {
         const body = await nwsJson(url, opts);
-        if (body === null)
-            return null; // 404: outside coverage, a normal answer
-        return parsePoint(body);
-    }, null, bindOnError(opts, "getPoint", lat, lon));
+        const found = body === null ? OUTSIDE : parsePoint(body);
+        holds.delete(key);
+        remember(lastValue, key, found);
+        return found;
+    }, null, (err) => {
+        // The one report per ultimately-failed lookup: it also starts the hold.
+        remember(holds, key, now());
+        safeReport(report, err);
+    });
+    return toLookup(value);
 }
-/** Drop one coordinate's cached point so the next call looks it up afresh. */
+/**
+ * The NWS point for a coordinate, or `null` when the point is invalid, outside
+ * NWS coverage (404), or the lookup failed. Never throws. Use `lookupPoint`
+ * when the difference matters.
+ */
+export async function getPoint(coords, opts = {}) {
+    const lookup = await lookupPoint(coords, opts);
+    return lookup.status === "ok" ? lookup.point : null;
+}
+/** Drop one coordinate's cached point so the next call looks it up afresh. A hold stays. */
 export function evictPoint(coords) {
-    pointCache.delete(pointKey(coords));
+    const key = pointKey(coords);
+    pointCache.delete(key);
+    lastValue.delete(key);
 }
-/** Test hook: clear every cached point. */
+/** Test hook: clear every cached point and every hold. */
 export function clearPointCache() {
     pointCache.clear();
+    holds.clear();
+    lastValue.clear();
 }
 //# sourceMappingURL=point.js.map

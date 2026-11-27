@@ -11,7 +11,7 @@ import { readLastGood, writeLastGood } from "../store.js";
 import { conditionFromNwsIcon } from "../condition.js";
 import { cToF, kmhToMph, mmToIn, mToMi } from "../units.js";
 import { getGrid, gridValueAt } from "./grid.js";
-import { getPoint } from "./point.js";
+import { lookupPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 const STORE_PREFIX = "aw:hourly:";
 /** How long an hourly load without its grid is kept before the grid is asked again (B-003). */
@@ -124,16 +124,20 @@ function withStamp(b, fetchedAt, stale) {
 /**
  * The hourly forecast for a coordinate, joined with the grid, or `null` when
  * the point is outside coverage or no reading is usable (fresh, stale inside
- * its bound, or last-good in the store). Never throws.
+ * its bound, or last-good in the store). When the point lookup failed, the
+ * last-good reading is returned as stored: no request, no grid. Never throws.
  */
 export async function getHourly(coords, opts = {}) {
     const { lat, lon } = coords;
-    const point = await getPoint(coords, opts);
-    if (!point)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
     const now = opts.now ?? Date.now;
     const key = `${fmt(lat)},${fmt(lon)}`;
     const storeKey = STORE_PREFIX + key;
+    if (lookup.status === "failed")
+        return storedHourly(storeKey, opts, now);
+    const point = lookup.point;
     const meta = await hourlyCache.getWithMeta(key, async () => {
         const body = await fetchHourly(coords, point, opts, now);
         writeLastGood(opts.store, storeKey, body, now());
@@ -141,6 +145,10 @@ export async function getHourly(coords, opts = {}) {
     }, null, bindOnError(opts, "getHourly", lat, lon), MAX_AGE_MS.hourly, now, (body) => (body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly));
     if (meta.data)
         return withStamp(meta.data, meta.fetchedAt, meta.stale);
+    return storedHourly(storeKey, opts, now);
+}
+/** The last-good hourly reading from the store, marked stale, or `null` when none is usable. */
+async function storedHourly(storeKey, opts, now) {
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.hourly, now());
     return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
