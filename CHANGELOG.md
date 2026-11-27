@@ -9,8 +9,8 @@ bump); **minor** = additive; **patch** = behavior-preserving fix.
 
 ## 0.8.0 — 2026-11-27
 
-**Additive, with one type-level change that can break a build** (`WeatherCall`, below). This release adds the NWS and NOAA engine: official US weather, with a stamp on every
-reading. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
+**Additive, with one type-level change that can break a build** (`WeatherCall`, below). This release adds the NWS and NOAA engine: official US weather, with a stamp on every station
+reading and forecast. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
 
 ### Added
 - **Engine functions:** `getWeather` (every part in one report), `getNow`, `getHourly`, `getDaily`,

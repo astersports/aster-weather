@@ -1,8 +1,8 @@
 # @aster/weather
 
 Official US weather for Aster projects: National Weather Service forecasts, station readings
-and alerts, and NOAA radar. Every reading says what it is, where it came from and how old it
-is. The package also ships the Sky weather icons (`@aster/weather/icons`). The older
+and alerts, and NOAA radar. Station readings and forecasts carry a stamp that says what they
+are (measured or forecast), where they came from and how old they are. The package also ships the Sky weather icons (`@aster/weather/icons`). The older
 Open-Meteo fetchers are still here and deprecated.
 
 **This README is the reference.** The rules an agent must follow are in [`CLAUDE.md`](./CLAUDE.md).
@@ -17,7 +17,7 @@ automatically).
   grid and alerts come from the National Weather Service API (`api.weather.gov`). Radar comes
   from NOAA's map service (`mapservices.weather.noaa.gov`). Sun times come from the NWS point
   data. The moon is calculated in this package.
-- **Every reading is labelled.** Station readings, forecasts and the event reading carry a `Stamp` (section 5). A radar answer carries its frame times instead (section 9).
+- **Readings are labelled.** Station readings, forecasts and the event reading carry a `Stamp` (section 5). A radar answer carries its frame times instead (section 9). Alerts, sun times and the moon are dated by their own fields.
 - **The engine never throws.** A failed part becomes `null`, a stale reading or an empty list.
 - **Headless.** The engine draws nothing. The Sky icons are React, and `react` is an optional peer.
 - **Not here yet.** See section 17 for the parts still to come.
@@ -83,7 +83,7 @@ outside US coverage. Each part of the report (`now`, `hourly`, `daily`, `alerts`
 | `getMoon(at)` | `MoonPhase`: `fraction`, `illumination`, `name` | `at` is not a finite time. Makes no request. |
 | `getEventWeather(coords, eventStart, opts?)` | `EventReading`: `hour`, `strip`, `isRainWarning`, `isSevereWarning`, `stamp` | The time is unusable, the event is more than 7 days ahead or more than 1 day past (no request made), outside coverage, the forecast is unavailable, or no forecast hour is within `MAX_FORECAST_HOUR_GAP_MS` of the start. |
 
-## 5. Every reading says what it is
+## 5. What a reading says about itself
 
 Station readings, forecasts and the event reading carry a `Stamp`:
 
