@@ -1,0 +1,194 @@
+CC SESSION HANDOFF — aster-weather (@aster/weather) — 2026-11-27
+
+Repo: astersports/aster-weather (public). Session branch: claude/trusting-lovelace-5hvk7g.
+Grounded against git and GitHub at the end of the session:
+  origin/main = c2f7bae (PR #68). Tags on GitHub: v0.8.0 at c2f7bae, v0.7.0 at dff75ed.
+  package.json on origin/main: version 0.8.0.
+  The session branch has nothing unmerged except the wrap PR that carries this file.
+
+ONE-LINE SUMMARY
+  The package gained an engine on official US sources (National Weather Service and NOAA),
+  released as v0.8.0. No consumer has re-pinned, so no Aster product has changed.
+
+--------------------------------------------------------------------------------
+SHIPPED (all merged into main, in order)
+--------------------------------------------------------------------------------
+  #58  docs: approved weather-service design, build plans, fixtures, licence correction
+  #59  feat!: v0.7.0, a missing weather code is null, never clear sky          (released)
+  #60  feat: units and the condition vocabulary                    (engine 1 of 11)
+  #61  feat: NWS transport and point lookup                        (engine 2 of 11)
+  #62  feat: age-bounded stale readings and the last-good store    (engine 3 of 11)
+  #63  feat: hourly forecast joined with the forecast grid         (engine 4 of 11)
+  #64  feat: seven-day forecast                                    (engine 5 of 11)
+  #65  feat: measured current conditions, and official alerts      (engine 6 and 7 of 11)
+  #66  feat: radar, sun and moon, event weather, the one-call report (engine 8 to 10 of 11)
+  #67  fix: engine gaps closed before v0.8.0 (backlog B-001 to B-016)
+  #68  chore(release): v0.8.0, the weather engine                               (released)
+
+What v0.8.0 is
+  Nine public functions: getWeather (every part in one report), getNow, getHourly, getDaily,
+  getAlerts, getRadarRain, getSun, getMoon, getEventWeather. Plus clearWeatherCaches, the
+  condition helpers, their types, and the age and retry limits as constants.
+  Station readings, forecasts and the event reading carry a Stamp: kind (observed or forecast),
+  the time, the fetch time, stale, source. Past its maximum age a reading is dropped.
+  Radar may only add rain. A frame older than 20 minutes never claims.
+  US coverage only. Outside it the answer is null. The engine never throws.
+  The five Open-Meteo functions are deprecated and keep their behaviour. They are removed in
+  v1.0.0, after the consumers move.
+  README.md is the reference for all of it. Every number there is read from a constant in code.
+
+Owner decisions taken this session (2026-11-27)
+  - The package is not monetised. It becomes the weather service for every Aster project.
+  - Scope: official and measured sources. The package ships ready-made page parts (later).
+  - The design and the mock-up were approved.
+  - Alerts are shown under their official names, with the National Weather Service as issuer.
+  - The Open-Meteo licence statement was corrected: the data is CC-BY 4.0, the free API is for
+    non-commercial use only. README and CLAUDE.md section 2 carry the ruling.
+  - Release v0.7.0: approved. Release v0.8.0: approved.
+
+--------------------------------------------------------------------------------
+IN FLIGHT / HELD
+--------------------------------------------------------------------------------
+  aster-weather: nothing in flight. No open PR from this session other than the wrap PR.
+  aster-io: one docs PR opened in the same pass, updating docs/ESTATE_STATE.md and correcting
+  the @aster/weather paragraph of docs/WHAT_IS_BUILT.md.
+  No consumer repo was touched. No consumer has re-pinned to v0.7.0 or v0.8.0.
+
+--------------------------------------------------------------------------------
+DECISIONS AWAITING RATIFICATION
+--------------------------------------------------------------------------------
+  Nothing blocks. These were decided by the planner during the build and are open to veto:
+  1. B-014, accepted and not fixed: a station observation that fails once is not asked again
+     within the same load. A retry would double the wait each time a station hangs.
+  2. B-018, deferred to v0.9.0: an alert list carries no fetch time or stale flag. The owner
+     chose to release v0.8.0 with this documented. Fixing it changes what getAlerts returns.
+  3. The waits after a failure: point lookup 30 s, radar 60 s, forecast grid 5 min, sun
+     refresh 15 min. Each is a named constant.
+  4. getWeather asks the radar unless the caller passes radar: false. getNow and getDaily ask
+     only with radar: true.
+  5. The public surface: the nine functions and their types are exported. The point lookup,
+     grid, stations and radar internals are not.
+
+--------------------------------------------------------------------------------
+NEXT ACTION
+--------------------------------------------------------------------------------
+  1. Verify whether NOAA's radar service answers a browser's cross-origin request (design doc,
+     open item 1). It decides whether the App gets radar. Until then radar is server-only.
+  2. Write the plan for v0.9.0 from the design doc and the approved mock-up: icons for the
+     eleven newer conditions, night versions, a wind modifier, measurement glyphs, the computed
+     contrast test (B-005), the tornado art (B-004), and a fetch time on alerts (B-018).
+  3. Then v0.10.0 (page parts), v0.11.0 (UV index, outlooks, air quality), the four consumer
+     moves (aster-sports, st-patricks-armonk, nova-select, aster-io), and v1.0.0.
+  Each release needs its own plan and the owner's release approval.
+
+Open in docs/BACKLOG.md after this session
+  B-004 (low, v0.9.0)   the proposed tornado icon's funnel is mostly hidden
+  B-005 (medium, v0.9.0) the 3:1 contrast rule has no test
+  B-017 (low, a v0.8.x patch) a cache entry stays fresh while a clock that stepped back catches up
+  B-018 (medium, v0.9.0) alerts carry no fetch time
+  Accepted: B-014. Fixed and independently checked in #67: B-001 to B-003, B-006 to B-013,
+  B-015, B-016.
+
+Still unverified (design doc, open items)
+  - Radar from a browser.
+  - The radar loop picture, normal-for-the-date, and the severe-storm lookup by point. Each is
+    dropped if it cannot be verified in its build.
+  - NWS does not publish a rate limit. Its disclaimer says it may block an address or a type of
+    query that affects its service.
+
+--------------------------------------------------------------------------------
+MERGED THIS SESSION
+--------------------------------------------------------------------------------
+Readback for a library: the tag and the version on origin/main. Read from GitHub at wrap time.
+  v0.7.0 tag = dff75ed (PR #59 merge). v0.8.0 tag = c2f7bae (PR #68 merge).
+  The tagging workflow run for #68 completed with success.
+  Every other PR left the version unchanged, so no tag was cut for it.
+
+Measured per PR. CI = wall time of the final run of the required check workflow. Failed = failed
+CI runs on the PR. Branch-to-merge = first commit's author time to the merge time. Times UTC.
+
+  PR    merge SHA   merged     final CI   failed   branch-to-merge
+  #58   c300918     14:04:13   24 s       0        23 min 51 s
+  #59   dff75ed     14:10:32   26 s       0         5 min 00 s
+  #60   98f6e16     14:17:10   27 s       0         4 min 16 s
+  #61   bee5320     14:19:28   26 s       0         2 min 39 s
+  #62   361d6a4     14:22:56   23 s       0         3 min 08 s
+  #63   f9ca54e     14:27:25   22 s       0         3 min 12 s
+  #64   27f2f31     14:30:56   23 s       0         3 min 16 s
+  #65   5fdc30b     14:39:30   27 s       0         6 min 46 s
+  #66   3445853     15:21:07   34 s       0        39 min 06 s
+  #67   8badb5e     16:33:56   20 s       0        68 min 47 s
+  #68   c2f7bae     17:08:31   24 s       0        23 min 56 s
+
+  CI runs on the branch this session: 34, all successful.
+  Baseline for comparison (2026-09-12, another repo's PR 1444): 7:31 CI, 2 failed runs,
+  5 h 21 min branch to merge.
+  Note on #60 to #65: the work for several of these was committed before the previous PR
+  merged, then carried onto the new main. The author times above are the original ones.
+
+How the work was checked
+  Each task was built by a worker agent and then checked by a separate checker agent in its own
+  copy, with its own probes and mutation checks. A behaviour with no test counted as a fail,
+  even when the code was right. Results after engine task 7:
+    task 8 radar             fail, fail, pass   (a 10.5 s wait when radar hangs; then one test)
+    task 9 sun and moon      pass
+    task 10 event, report    fail, pass         (two missing tests)
+    #67 error reporting      pass
+    #67 radar hardening      fail, pass         (five missing tests)
+    #67 frame age at claim   fail, fail, pass   (missing tests; then a test that could pass
+                                                 for the wrong reason)
+    #67 grid and sun         fail, fail, pass   (two real defects in getSun; then one test)
+    #67 point lookup         pass
+    #67 follow-ups           fail, pass         (three missing tests)
+    #68 release              fail, fail, fail, pass (wording that claimed more than the code)
+  Two checker findings were wrong and were dismissed after reading the code: an authorship line
+  on a planner commit, and a claim that the Open-Meteo fetchers never call onError (they do:
+  forecast.ts:134, current.ts:125, daily.ts:117, nowcast.ts:94; a later probe confirmed it).
+  Defects the planner found by reading the code, before any checker: a radar frame with no age
+  limit (B-009), a frame's age checked only at the read (B-013), and a half-second wait on the
+  failed-lookup path that the tests hid by switching the retry sleep off.
+  One extra check by the planner: the whole suite with the wall clock shifted by -2, +1, +3, +40
+  and +200 days, and under four machine time zones. Every run passed. The fixtures are dated
+  2026-11-27, so this rules out tests that only pass on the day they were written.
+
+Not covered
+  - No live request to the National Weather Service or NOAA was made by the tests or the
+    checkers. Everything ran on fixtures recorded on 2026-11-27 for one point.
+  - The NWS disclaimer and the radar service's own metadata were read on 2026-11-27.
+  - No consumer was built against v0.8.0.
+
+--------------------------------------------------------------------------------
+10/10
+--------------------------------------------------------------------------------
+  No UI change was merged this session, so there is nothing to score. The package is headless.
+  The mock-up linked from the design doc is the approved rendering for v0.9.0 and v0.10.0 to
+  match. It is a reference, not shipped work.
+
+--------------------------------------------------------------------------------
+DOCS RECONCILED IN THIS WRAP
+--------------------------------------------------------------------------------
+  README.md   not stale. Rewritten in #68 and checked sentence by sentence against the code
+              in four rounds.
+  CLAUDE.md   not stale. Sections 1, 2, 3 and 5 were updated in #68. 118 lines, under the
+              estate's limit of 120.
+  AGENTS.md   not stale. It only points to CLAUDE.md and README.md.
+  DERIVATION.md  unchanged. It describes how the Open-Meteo fetchers were derived, which is
+              still true of the deprecated half.
+  docs/superpowers/specs/2026-11-27-one-weather-engine-design.md  updated in this wrap PR: the
+              status line now says v0.7.0 and v0.8.0 are released, the releases table marks
+              both, the "v0.7.0 is reserved" constraint is removed, and open item 4 records
+              that alerts carry no fetch time (B-018).
+  docs/superpowers/plans/*  left as written. They are the record of the build; their
+              checkboxes were not ticked.
+  aster-io docs/ESTATE_STATE.md and docs/WHAT_IS_BUILT.md  updated in an aster-io PR in the
+              same pass (cross-repo state changed: two releases of a shared library).
+
+Process notes for the next session
+  - One branch name is assigned per session. After each squash merge the remote branch is
+    deleted, and the next commit is carried onto the new main with git rebase --onto.
+  - Checkers work in scratch worktrees under /tmp so a worker can keep building in the main
+    checkout. Test-only fixes can also be built in a scratch worktree and cherry-picked.
+  - A bare "pnpm exec vitest run" picks up scripts/dependency-gate.test.mjs, which is a
+    node --test file, and reports it as failing to load. Use "pnpm run test".
+  - Sub-agents made three stray tool calls during the session (send a message, create a
+    session, archive a session). Each was denied by the permission layer and nothing happened.
