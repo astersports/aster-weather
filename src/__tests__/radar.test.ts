@@ -10,14 +10,16 @@ import {
   clearRadarCache,
   radarCondition,
   rainClaimFrom,
-  radarWmoCode,
   radarTimeoutMs,
   RADAR_TIMEOUT_MS,
   BRIDGE_FRAMES,
+  MAX_FRAME_AGE_MS,
+  RADAR_RETRY_AFTER_MS,
   type EchoIntensity,
   type RadarFrame,
   type RadarRain,
 } from "../radar.js";
+import type { Condition } from "../condition.js";
 import { getNow, clearNowCache, type NowReading } from "../now.js";
 import { getDaily, clearDailyCache } from "../nws/daily.js";
 import { clearStationsCache } from "../nws/observations.js";
@@ -431,7 +433,44 @@ describe("rainClaimFrom — the bridge and the rain floor", () => {
   });
 });
 
-describe("radarCondition and radarWmoCode", () => {
+describe("radarCondition — the direct mapping, every intensity at every temperature", () => {
+  // Rows: [intensity, temperature F, expected Condition]. `none` and `unknown-echo` are
+  // never passed in by a claim (rainClaimFrom filters them); the rows pin the fallthrough.
+  it.each<[EchoIntensity, number | null, Condition]>([
+    ["none", 70, "light-rain"],
+    ["none", 35, "light-rain"],
+    ["none", 34, "light-snow"],
+    ["none", 20, "light-snow"],
+    ["none", null, "light-rain"],
+    ["light", 70, "light-rain"],
+    ["light", 35, "light-rain"],
+    ["light", 34, "light-snow"],
+    ["light", 20, "light-snow"],
+    ["light", null, "light-rain"],
+    ["rain", 70, "light-rain"],
+    ["rain", 35, "light-rain"],
+    ["rain", 34, "light-snow"],
+    ["rain", 20, "light-snow"],
+    ["rain", null, "light-rain"],
+    ["heavy", 70, "rain"],
+    ["heavy", 35, "rain"],
+    ["heavy", 34, "snow"],
+    ["heavy", 20, "snow"],
+    ["heavy", null, "rain"],
+    ["storm", 70, "thunderstorm"],
+    ["storm", 35, "thunderstorm"],
+    ["storm", 34, "snow"],
+    ["storm", 20, "snow"],
+    ["storm", null, "thunderstorm"],
+    ["unknown-echo", 70, "light-rain"],
+    ["unknown-echo", 35, "light-rain"],
+    ["unknown-echo", 34, "light-snow"],
+    ["unknown-echo", 20, "light-snow"],
+    ["unknown-echo", null, "light-rain"],
+  ])("radarCondition(%s, %s) is %s", (intensity, temperatureF, expected) => {
+    expect(radarCondition(intensity, temperatureF)).toBe(expected);
+  });
+
   it("light showers become light-rain, heavier rain, storms thunderstorm", () => {
     expect(radarCondition("rain", 54)).toBe("light-rain");
     expect(radarCondition("heavy", 54)).toBe("rain");
@@ -447,7 +486,8 @@ describe("radarCondition and radarWmoCode", () => {
   });
 
   it("a null temperature is not freezing", () => {
-    expect(radarWmoCode("rain", null)).toBe(80);
+    // Was radarWmoCode("rain", null) === 80, which is Light showers, icon light-rain.
+    expect(radarCondition("rain", null)).toBe("light-rain");
   });
 });
 
@@ -1079,5 +1119,190 @@ describe("a point outside coverage makes no radar request", () => {
     expect(await getNow(COORDS, { fetchImpl, now: () => NOW, radar: true })).toBeNull();
     expect(await getDaily(COORDS, { fetchImpl, now: () => NOW, radar: true })).toBeNull();
     expect(calls.filter(isRadarCall)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B-009: a radar frame has an age limit of its own
+// ---------------------------------------------------------------------------
+
+describe("B-009 — a radar frame has an age limit of its own", () => {
+  const now = NOW;
+
+  it("the frame age limit is 20 minutes", () => {
+    expect(MAX_FRAME_AGE_MS).toBe(20 * MIN);
+  });
+
+  it("two green frames three hours old: no answer, and a dry reading stays dry", () => {
+    const old: RadarFrame[] = [
+      { at: now - 180 * MIN, intensity: "rain" },
+      { at: now - 179 * MIN, intensity: "rain" },
+    ];
+    expect(resolveRadar(old, now)).toBeNull();
+    const reading = dry();
+    expect(applyRadarToNow(reading, resolveRadar(old, now))).toBe(reading);
+  });
+
+  it("the newest frame 21 minutes old is no answer", () => {
+    expect(resolveRadar([{ at: now - 21 * MIN, intensity: "rain" }], now)).toBeNull();
+  });
+
+  it("the newest frame exactly 20 minutes old is an answer", () => {
+    const r = resolveRadar([{ at: now - 20 * MIN, intensity: "rain" }], now);
+    expect(r).toMatchObject({ rainingNow: true, latestFrameAt: now - 20 * MIN });
+  });
+
+  it("old green frames plus two recent dry frames: the old ones are ignored and the bridge holds only the recent ones", () => {
+    const frames: RadarFrame[] = [
+      { at: now - 180 * MIN, intensity: "rain" },
+      { at: now - 120 * MIN, intensity: "storm" },
+      { at: now - 8 * MIN, intensity: "none" },
+      { at: now - 2 * MIN, intensity: "none" },
+    ];
+    const r = resolveRadar(frames, now)!;
+    expect(r.rainingNow).toBe(false);
+    expect(r.recentRain).toBe(false);
+    expect(r.bridgeFrames.map((f) => f.at)).toEqual([now - 2 * MIN, now - 8 * MIN]);
+  });
+
+  it("a frame dated after now is kept (the device clock may run behind the radar's)", () => {
+    const r = resolveRadar([{ at: now + 3 * MIN, intensity: "rain" }], now);
+    expect(r).toMatchObject({ rainingNow: true, latestFrameAt: now + 3 * MIN });
+  });
+
+  it("getRadarRain on a payload whose frames are all old: null, and onError once", async () => {
+    const { fetchImpl } = router({}, ok(identify(["13 198 19 255"], [NOW - 180 * MIN])));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    const out = await settle(getRadarRain(COORDS, { fetchImpl, onError, now: () => now }));
+    expect(out).toBeNull();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B-011: a failed radar read is remembered for one minute
+// ---------------------------------------------------------------------------
+
+/** A fetch whose reply can be changed between calls. Records every URL it is asked. */
+function switchable(initial: Reply) {
+  let reply = initial;
+  const calls: string[] = [];
+  const fetchImpl: FetchImpl = async (url) => {
+    calls.push(url);
+    return { ok: reply.status < 300, status: reply.status, json: async () => reply.body };
+  };
+  return {
+    calls,
+    fetchImpl,
+    set(next: Reply) {
+      reply = next;
+    },
+    radarCalls: () => calls.filter(isRadarCall),
+  };
+}
+
+describe("B-011 — a failed radar read is remembered for one minute", () => {
+  it("the hold is one minute", () => {
+    expect(RADAR_RETRY_AFTER_MS).toBe(60_000);
+  });
+
+  it("a 500 on a cold cache: one request, onError once, null; 30 s later no request and no onError; 61 s later one request", async () => {
+    const s = switchable(fail(500));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    expect(await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW }))).toBeNull();
+    expect(s.radarCalls()).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    expect(await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 30_000 })).toBeNull();
+    expect(s.radarCalls(), "held: no new request").toHaveLength(1);
+    expect(onError, "held: no onError").toHaveBeenCalledTimes(1);
+
+    s.set(greenAt(NOW + 61_000));
+    const later = await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 61_000 }));
+    expect(s.radarCalls()).toHaveLength(2);
+    expect(later?.rainingNow).toBe(true);
+  });
+
+  it("with an earlier good answer: a failed refresh serves it, and 30 s later the same answer with zero requests", async () => {
+    const s = switchable(greenAt(NOW));
+    const good = await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW });
+    expect(good?.rainingNow).toBe(true);
+
+    s.set(fail(500));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    const refresh = await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 5 * MIN }));
+    expect(refresh).toEqual(good);
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    const held = await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 5 * MIN + 30_000 });
+    expect(held).toEqual(good);
+    expect(s.radarCalls(), "the held call made no request").toHaveLength(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("a held call more than 15 minutes after the good answer's fetch returns null", async () => {
+    const s = switchable(greenAt(NOW));
+    await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW });
+
+    // The refresh at 14 min 48 s fails: the stale answer is still inside 15 minutes, and the hold starts.
+    s.set(fail(500));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    const refresh = await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 14 * MIN + 48_000 }));
+    expect(refresh).not.toBeNull();
+
+    // At 15 min 12 s the hold is still in force, and the stored answer is past 15 minutes of its own fetch.
+    expect(await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 15 * MIN + 12_000 })).toBeNull();
+    expect(s.radarCalls()).toHaveLength(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("a success after the hold clears it: the next call inside the fresh window makes no request and returns the new answer", async () => {
+    const s = switchable(fail(500));
+    const onError = vi.fn();
+    await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW }));
+    s.set(greenAt(NOW + 61_000));
+    const after = await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 61_000 }));
+    expect(after?.rainingNow).toBe(true);
+
+    const inside = await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW + 62_000 });
+    expect(inside).toEqual(after);
+    expect(s.radarCalls()).toHaveLength(2);
+  });
+
+  it("two coordinates hold separately: a hold on one does not hold the other", async () => {
+    const s = switchable(fail(500));
+    await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW }));
+
+    const other = { lat: 25.79, lon: -80.29 };
+    s.set(ok(identify(["0 0 0 0"], [NOW])));
+    const b = await settle(getRadarRain(other, { fetchImpl: s.fetchImpl, now: () => NOW + 1000 }));
+    expect(b, "the other point is asked").toMatchObject({ rainingNow: false });
+    expect(s.radarCalls()).toHaveLength(2);
+
+    expect(await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW + 1000 })).toBeNull();
+    expect(s.radarCalls(), "the first point is still held").toHaveLength(2);
+  });
+
+  it("clearRadarCache lifts the hold", async () => {
+    const s = switchable(fail(500));
+    await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW }));
+    s.set(greenAt(NOW + 1000));
+    clearRadarCache();
+    const r = await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW + 1000 }));
+    expect(r?.rainingNow).toBe(true);
+    expect(s.radarCalls()).toHaveLength(2);
+  });
+
+  it("getNow with radar: true during a hold makes no radar request and the reading comes back unchanged", async () => {
+    const withoutRadar = await getNow(COORDS, { fetchImpl: healthy().fetchImpl, now: () => NOW });
+    clearNowCache();
+    const h = healthy({}, fail(500));
+    await settle(getRadarRain(COORDS, { fetchImpl: h.fetchImpl, now: () => NOW }));
+    expect(h.calls.filter(isRadarCall)).toHaveLength(1);
+
+    const n = await settle(getNow(COORDS, { fetchImpl: h.fetchImpl, now: () => NOW, radar: true }));
+    expect(h.calls.filter(isRadarCall), "held: no new radar request").toHaveLength(1);
+    expect(n).toEqual(withoutRadar);
+    expect(n).not.toHaveProperty("rainSource");
   });
 });
