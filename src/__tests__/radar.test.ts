@@ -713,6 +713,76 @@ describe("getDaily with the radar", () => {
   });
 });
 
+describe("getDaily asks no radar without a usable time zone, and a failed radar changes nothing", () => {
+  /** The recorded point with its time zone set to `zone`, or removed when `zone` is undefined. */
+  function pointWithZone(zone: string | null | undefined) {
+    const body = structuredClone(points) as { properties: Record<string, unknown> };
+    if (zone === undefined) delete body.properties.timeZone;
+    else body.properties.timeZone = zone;
+    return body;
+  }
+  const radarHits = (calls: string[]) => calls.filter((u) => u.startsWith(RADAR_PREFIX)).length;
+  const noClaim = (days: DayReading[]) => days.every((d) => !("rainSource" in d));
+
+  it("a point with a null time zone: the forecast is still given, and zero radar requests are made", async () => {
+    const plain = router({ [POINT_URL]: ok(pointWithZone(null)), [FORECAST_URL]: ok(forecast) });
+    const base = await getDaily(COORDS, { fetchImpl: plain.fetchImpl, now: () => DAY_AT });
+    clearDailyCache();
+    clearPointCache();
+    const { calls, fetchImpl } = router(
+      { [POINT_URL]: ok(pointWithZone(null)), [FORECAST_URL]: ok(forecast) },
+      greenAt(DAY_AT),
+    );
+    const out = await getDaily(COORDS, { fetchImpl, now: () => DAY_AT, radar: true });
+    expect(out).not.toBeNull();
+    expect(out!.days.length).toBeGreaterThan(0);
+    expect(out!.days).toEqual(base!.days);
+    expect(noClaim(out!.days)).toBe(true);
+    expect(radarHits(calls)).toBe(0);
+  });
+
+  it("a point with an unusable time zone (Not/AZone): the forecast is still given, and zero radar requests are made", async () => {
+    const plain = router({ [POINT_URL]: ok(pointWithZone("Not/AZone")), [FORECAST_URL]: ok(forecast) });
+    const base = await getDaily(COORDS, { fetchImpl: plain.fetchImpl, now: () => DAY_AT });
+    clearDailyCache();
+    clearPointCache();
+    const { calls, fetchImpl } = router(
+      { [POINT_URL]: ok(pointWithZone("Not/AZone")), [FORECAST_URL]: ok(forecast) },
+      greenAt(DAY_AT),
+    );
+    const out = await getDaily(COORDS, { fetchImpl, now: () => DAY_AT, radar: true });
+    expect(out).not.toBeNull();
+    expect(out!.days.length).toBeGreaterThan(0);
+    expect(out!.days).toEqual(base!.days);
+    expect(noClaim(out!.days)).toBe(true);
+    expect(radarHits(calls)).toBe(0);
+  });
+
+  it("a radar that fails (500): the daily forecast equals the radar-off reading, one radar request, one onError", async () => {
+    const plain = await getDaily(COORDS, { fetchImpl: dailyRouter().fetchImpl, now: () => DAY_AT });
+    clearDailyCache();
+    clearPointCache();
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    const { calls, fetchImpl } = router({ [POINT_URL]: ok(points), [FORECAST_URL]: ok(forecast) }, fail(500));
+    const out = await settle(getDaily(COORDS, { fetchImpl, now: () => DAY_AT, radar: true, onError }));
+    expect(out!.days).toEqual(plain!.days);
+    expect(noClaim(out!.days)).toBe(true);
+    expect(radarHits(calls)).toBe(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][1]).toEqual({ call: "getRadarRain", lat: 41.03, lon: -73.76 });
+  });
+
+  it("control: a usable zone and a claiming radar make exactly one radar request and claim venue today", async () => {
+    const { calls, fetchImpl } = router(
+      { [POINT_URL]: ok(points), [FORECAST_URL]: ok(forecast) },
+      greenAt(DAY_AT),
+    );
+    const out = await settle(getDaily(COORDS, { fetchImpl, now: () => DAY_AT, radar: true }));
+    expect(radarHits(calls)).toBe(1);
+    expect(out!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar" });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Latency: one attempt, four seconds at most, alongside the reading
 // ---------------------------------------------------------------------------
