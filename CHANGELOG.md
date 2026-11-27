@@ -18,7 +18,7 @@ bump); **minor** = additive; **patch** = behavior-preserving fix.
 
 ### Fixed
 - **B-018:** a list served after a failed refresh is no longer indistinguishable from a fresh one; read `stale` from `getAlertsReading` or `WeatherReport.alertsReading`.
-- **B-017:** a cached reading whose fetch time is ahead of the clock is never fresh. After a clock step back it is fetched again; if that fetch fails it is served only as `stale: true`.
+- **B-017:** a cached reading whose fetch time is ahead of the clock is never fresh. Readings that carry a `stale` flag (the NWS readings and alert lists) are fetched again after a clock step back, and if that fetch fails they are served only as `stale: true`. An unflagged cache read (the Open-Meteo fetchers, and the NWS point and station lookups) no longer treats such an entry as fresh: it loads again, or, where stale-while-revalidate is on, serves the entry and refreshes it in the background. A failed load there returns the old value with no `stale` flag.
 
 ### Security (dev dependencies)
 - `happy-dom` ^21.0.4, `vitest` ^5.1.2, and `vite` held at ^8.3.3 through `pnpm.overrides` (resolves to 8.4.0). This closes nine Dependabot alerts. They are dev dependencies only; the package has no runtime dependencies, and `dist/` does not change because of them.

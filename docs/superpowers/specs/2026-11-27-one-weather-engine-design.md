@@ -194,8 +194,8 @@ identify unaltered NWS content. Severity maps to three visual levels.
   database store adapter kept.
 - **nova-select:** `server/weather.ts` moves to the package's NWS functions.
 - **aster-io:** the product mock uses the Sky icons and stops naming Open-Meteo.
-- **samaritano-hub** (added 2026-11-27, see Decided): `calendar/extras/wx.mjs` moves from the
-  Open-Meteo fetchers to the package's NWS functions at `v0.9.0`, see Decided (2026-11-27, "v0.9.0 now, renumber the rest"); it was `v0.10.0` when written.
+- **samaritano-hub** (added 2026-11-27, see Decided): `calendar/extras/wx.mjs` is to move from the
+  Open-Meteo fetchers to the package's NWS functions at `v0.9.0` (its own PR, after this tag), see Decided (2026-11-27, "v0.9.0 now, renumber the rest"); it was `v0.10.0` when written.
 
 Each project places the package's parts where its weather shows today, in its own PR,
 with a before-and-after capture. Each consumer's own weather rules change in the same
@@ -265,6 +265,6 @@ is the owner ruling that §2 requires.
   - `v0.11.0`: page parts (was `v0.10.0`).
   - `v0.12.0`: UV, outlooks, heat stress, air quality (was `v0.11.0`).
   - `v1.0.0`: unchanged.
-  - **The Hub moves at `v0.9.0`, not `v0.10.0`:** the Hub's move to the NWS functions is now at
-    `v0.9.0`, "NWS, plus Open-Meteo beyond". Events past the NWS hourly range keep Open-Meteo until
+  - **The Hub is to move at `v0.9.0`, not `v0.10.0`:** the Hub's move to the NWS functions is planned
+    for `v0.9.0` (its own PR, after this tag; it has not happened, and its `wx.mjs` accepts only the `0.8` line today), "NWS, plus Open-Meteo beyond". Events past the NWS hourly range keep Open-Meteo until
     `v1.0.0`, and the Hub shows the Open-Meteo credit (owner: "Add a small credit").
