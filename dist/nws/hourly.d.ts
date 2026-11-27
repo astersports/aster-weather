@@ -46,8 +46,9 @@ export declare const GRID_RETRY_AFTER_MS: number;
 /**
  * The hourly forecast for a coordinate, joined with the grid, or `null` when
  * the point is outside coverage or no reading is usable (fresh, stale inside
- * its bound, or last-good in the store). When the point lookup failed, the
- * last-good reading is returned as stored: no request, no grid. Never throws.
+ * its bound, or last-good in the store). When the point lookup failed, the reading
+ * already in memory is returned under the same bound (B-015), else the stored
+ * last-good reading: no request, no grid. Never throws.
  */
 export declare function getHourly(coords: Coords, opts?: EngineOptions): Promise<HourlyResult | null>;
 /** Test hook: clear every cached hourly forecast. */

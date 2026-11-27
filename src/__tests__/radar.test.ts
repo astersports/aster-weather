@@ -1719,3 +1719,28 @@ describe("B-013 — a frame that ages out while the reading loads does not claim
     expectRadarReadLive(await readBackRadar(r, clock), DAY_AT, DAY_AT - (20 * MIN - 1000));
   });
 });
+
+describe("B-016 — a radar hold is in force only while the clock is inside its minute", () => {
+  it("a clock that stepped back an hour is not held: the call asks the radar again", async () => {
+    const s = switchable(fail(500));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    expect(await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW }))).toBeNull();
+    expect(s.radarCalls()).toHaveLength(1);
+
+    expect(await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, onError, now: () => NOW - 3600_000 }))).toBeNull();
+    expect(s.radarCalls(), "a stepped-back clock is not a hold").toHaveLength(2);
+    expect(onError).toHaveBeenCalledTimes(2);
+  });
+
+  it("the edges: at 59 999 ms after the failure the hold still answers with no request; at 60 000 ms the radar is asked", async () => {
+    const s = switchable(fail(500));
+    expect(await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW }))).toBeNull();
+    expect(s.radarCalls()).toHaveLength(1);
+
+    expect(await getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW + 59_999 })).toBeNull();
+    expect(s.radarCalls(), "59 999 ms: held").toHaveLength(1);
+
+    expect(await settle(getRadarRain(COORDS, { fetchImpl: s.fetchImpl, now: () => NOW + 60_000 }))).toBeNull();
+    expect(s.radarCalls(), "60 000 ms: not held").toHaveLength(2);
+  });
+});

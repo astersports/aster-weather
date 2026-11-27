@@ -4,6 +4,7 @@
  * answers 404: a normal answer, cached as "outside" without `onError`. A lookup
  * that fails (500, timeout) is reported once through `onError`, is not cached,
  * and holds that coordinate for `POINT_RETRY_AFTER_MS` (no request in the hold).
+ * A hold is in force only while the clock is at or after the failure (B-016).
  */
 import { WeatherCache } from "../cache.js";
 import { RESILIENT_CACHE, bindOnError, isValidCoord, safeReport } from "../helpers.js";
@@ -150,8 +151,11 @@ export async function lookupPoint(
   const key = pointKey(coords);
   const now = opts.now ?? Date.now;
 
+  // A hold is in force only while the clock is at or after the failure and less than the limit
+  // past it. A clock that stepped back (negative elapsed) is not held (B-016).
   const heldAt = holds.get(key);
-  if (heldAt !== undefined && now() - heldAt < POINT_RETRY_AFTER_MS) {
+  const elapsed = heldAt === undefined ? NaN : now() - heldAt;
+  if (elapsed >= 0 && elapsed < POINT_RETRY_AFTER_MS) {
     return toLookup(lastValue.get(key) ?? null);
   }
 

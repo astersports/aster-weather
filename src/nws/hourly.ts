@@ -207,8 +207,9 @@ function withStamp(b: HourlyBody, fetchedAt: number, stale: boolean): HourlyResu
 /**
  * The hourly forecast for a coordinate, joined with the grid, or `null` when
  * the point is outside coverage or no reading is usable (fresh, stale inside
- * its bound, or last-good in the store). When the point lookup failed, the
- * last-good reading is returned as stored: no request, no grid. Never throws.
+ * its bound, or last-good in the store). When the point lookup failed, the reading
+ * already in memory is returned under the same bound (B-015), else the stored
+ * last-good reading: no request, no grid. Never throws.
  */
 export async function getHourly(
   coords: Coords,
@@ -220,7 +221,7 @@ export async function getHourly(
   const now = opts.now ?? Date.now;
   const key = `${fmt(lat)},${fmt(lon)}`;
   const storeKey = STORE_PREFIX + key;
-  if (lookup.status === "failed") return storedHourly(storeKey, opts, now);
+  if (lookup.status === "failed") return heldHourly(key, storeKey, opts, now);
   const point = lookup.point;
 
   const meta = await hourlyCache.getWithMeta(
@@ -234,10 +235,41 @@ export async function getHourly(
     bindOnError(opts, "getHourly", lat, lon),
     MAX_AGE_MS.hourly,
     now,
-    (body) => (body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly),
+    hourlyFreshFor,
   );
   if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
 
+  return storedHourly(storeKey, opts, now);
+}
+
+/** How long a cached hourly body stays fresh: a load without its grid, five minutes (B-003). */
+function hourlyFreshFor(body: HourlyBody | null): number {
+  return body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly;
+}
+
+/**
+ * The failed-lookup path: the in-memory reading first (B-015), read with no request
+ * and no `onError`, under the same freshness and age bound as the normal path. Only
+ * when nothing usable is in memory does it read the last-good store.
+ */
+async function heldHourly(
+  key: string,
+  storeKey: string,
+  opts: EngineOptions,
+  now: () => number,
+): Promise<HourlyResult | null> {
+  const held = await hourlyCache.getWithMeta(
+    key,
+    async () => {
+      throw new Error("hourly: point lookup failed");
+    },
+    null,
+    undefined,
+    MAX_AGE_MS.hourly,
+    now,
+    hourlyFreshFor,
+  );
+  if (held.data) return withStamp(held.data, held.fetchedAt, held.stale);
   return storedHourly(storeKey, opts, now);
 }
 

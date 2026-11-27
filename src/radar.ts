@@ -290,8 +290,11 @@ export async function getRadarRain(
   if (!isValidCoord(lat, lon)) return null;
   const now = opts.now ?? Date.now;
   const key = coordKey(lat, lon);
+  // In force only while the clock is at or after the failure and less than the limit past it:
+  // a clock that stepped back is not held (B-016).
   const heldAt = radarHolds.get(key);
-  if (heldAt !== undefined && now() - heldAt < RADAR_RETRY_AFTER_MS) {
+  const elapsed = heldAt === undefined ? NaN : now() - heldAt;
+  if (elapsed >= 0 && elapsed < RADAR_RETRY_AFTER_MS) {
     // The loader throws at once, so no request is made, and no onError is given.
     // The result is the stored answer if it is still inside MAX_AGE_MS.radar, else null.
     const held = await radarCache.getWithMeta(

@@ -121,8 +121,9 @@ async function load(coords, opts, now) {
  * fresh enough, else the official forecast hour containing now. `null` when the
  * point is outside NWS coverage (no `onError`), or no reading is usable (fresh,
  * stale inside its bound, or last-good in the store). When the point lookup
- * failed, the last-good observed reading is returned as stored: no request, and
- * no radar claim. Never throws.
+ * failed, the reading already in memory is returned under the same bound (B-015),
+ * else the stored last-good observed reading: no request, and no radar claim.
+ * Never throws.
  */
 export async function getNow(coords, opts = {}) {
     const lookup = await lookupPoint(coords, opts);
@@ -130,7 +131,7 @@ export async function getNow(coords, opts = {}) {
         return null;
     const now = opts.now ?? Date.now;
     if (lookup.status === "failed")
-        return readStoredNow(coords, opts, now);
+        return heldNow(coords, opts, now);
     // The radar, when asked, runs alongside the reading: started once the point is
     // known (so a point outside coverage asks nothing), before the reading loads.
     const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
@@ -139,6 +140,19 @@ export async function getNow(coords, opts = {}) {
         return null;
     // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
     return radar ? applyRadarToNow(reading, await radar, now()) : reading;
+}
+/**
+ * The failed-lookup path of `getNow`: the in-memory reading first (B-015), read with
+ * no request, no radar and no `onError` under the normal age bound, then the store.
+ */
+async function heldNow(coords, opts, now) {
+    const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
+    const held = await nowCache.getWithMeta(key, async () => {
+        throw new Error("now: point lookup failed");
+    }, null, undefined, MAX_AGE_MS.now, now);
+    if (held.data)
+        return withStamp(held.data, held.fetchedAt, held.stale);
+    return readStoredNow(coords, opts, now);
 }
 /** The last-good reading from the store, marked stale, or `null` when none is usable. */
 async function readStoredNow(coords, opts, now) {

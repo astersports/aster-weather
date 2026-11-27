@@ -168,8 +168,9 @@ function withStamp(b: DailyBody, fetchedAt: number, stale: boolean): DailyResult
  * The seven-day forecast for a coordinate, one reading per date, or `null`
  * when the point is outside coverage or no reading is usable (fresh, stale
  * inside its bound, or last-good in the store). When the point lookup failed,
- * the last-good forecast is returned as stored: no request, and no radar (there
- * is no time zone to place today). Never throws.
+ * the forecast already in memory is returned under the same bound (B-015), else
+ * the stored last-good forecast: no request, and no radar (there is no time zone
+ * to place today). Never throws.
  */
 export async function getDaily(
   coords: Coords,
@@ -178,7 +179,7 @@ export async function getDaily(
   const lookup = await lookupPoint(coords, opts);
   if (lookup.status === "outside") return null;
   const now = opts.now ?? Date.now;
-  if (lookup.status === "failed") return storedDaily(coords, opts, now);
+  if (lookup.status === "failed") return heldDaily(coords, opts, now);
   const point = lookup.point;
   // The radar, when asked, runs alongside the reading. It is for today's cell, so
   // it starts only with a usable time zone: today is the venue's date for now().
@@ -232,13 +233,28 @@ async function readStoredDaily(
   return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
 
-/** The failed-lookup path of `getDaily`: the stored forecast only. */
-function storedDaily(
+/**
+ * The failed-lookup path of `getDaily`: the in-memory forecast first (B-015), read
+ * with no request and no `onError` under the normal age bound, then the store.
+ */
+async function heldDaily(
   coords: Coords,
   opts: EngineOptions,
   now: () => number,
 ): Promise<DailyResult | null> {
-  return readStoredDaily(STORE_PREFIX + `${fmt(coords.lat)},${fmt(coords.lon)}`, opts, now);
+  const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
+  const held = await dailyCache.getWithMeta(
+    key,
+    async () => {
+      throw new Error("daily: point lookup failed");
+    },
+    null,
+    undefined,
+    MAX_AGE_MS.daily,
+    now,
+  );
+  if (held.data) return withStamp(held.data, held.fetchedAt, held.stale);
+  return readStoredDaily(STORE_PREFIX + key, opts, now);
 }
 
 /** Test hook: clear every cached daily forecast. */

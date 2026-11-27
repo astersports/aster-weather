@@ -31,8 +31,9 @@ export interface NowReading {
  * fresh enough, else the official forecast hour containing now. `null` when the
  * point is outside NWS coverage (no `onError`), or no reading is usable (fresh,
  * stale inside its bound, or last-good in the store). When the point lookup
- * failed, the last-good observed reading is returned as stored: no request, and
- * no radar claim. Never throws.
+ * failed, the reading already in memory is returned under the same bound (B-015),
+ * else the stored last-good observed reading: no request, and no radar claim.
+ * Never throws.
  */
 export declare function getNow(coords: Coords, opts?: EngineOptions): Promise<NowReading | null>;
 /** Test hook: clear every cached current reading. */

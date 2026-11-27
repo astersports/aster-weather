@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { getNow, clearNowCache, MAX_OBSERVATION_AGE_MS } from "../now.js";
 import { clearStationsCache } from "../nws/observations.js";
-import { clearPointCache } from "../nws/point.js";
+import { clearPointCache, evictPoint } from "../nws/point.js";
 import { clearGridCache } from "../nws/grid.js";
 import { clearHourlyCache } from "../nws/hourly.js";
 import { NWS_API } from "../nws/http.js";
@@ -385,5 +385,70 @@ describe("getNow — a failed point lookup serves the stored reading", () => {
     expect(await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
     expect(get).not.toHaveBeenCalled();
     expect(f.calls).toHaveLength(1);
+  });
+});
+
+describe("getNow — a failed point lookup uses the reading already in memory (B-015)", () => {
+  const HOUR = 3600_000;
+
+  /** A good observed reading at `at`, then the point evicted so the next lookup has to ask. */
+  async function warmAt(at: number, store?: WeatherStore) {
+    const r = await getNow(COORDS, { fetchImpl: healthy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    evictPoint(COORDS);
+    return r!;
+  }
+
+  it("fresh in memory, points 500, no store: the same reading, not stale, and only the points URL is asked", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 5 * MIN });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(f.calls).toHaveLength(2);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past its fresh window inside 3 h, points 500: the in-memory reading, stale, with its own fetchedAt", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 20 * MIN });
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.temperature).toBe(warm.temperature);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past 3 h, points 500, no store: null, and only the points URL is asked", async () => {
+    await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 4 * HOUR })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("in memory and in the store, points 500: the in-memory reading wins over an older stored copy", async () => {
+    const store = memoryStore();
+    const warm = await warmAt(NOW, store);
+    const raw = JSON.parse(store.data.get(STORE_KEY)!) as { fetchedAt: number; data: unknown };
+    store.data.set(STORE_KEY, JSON.stringify({ ...raw, fetchedAt: NOW - HOUR }));
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW + 5 * MIN });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+  });
+
+  it("radar on, fresh in memory, points 500: no radar request and no rainSource", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 5 * MIN, radar: true });
+    expect(r).toEqual(warm);
+    expect(r!.rainSource).toBeUndefined();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
 });

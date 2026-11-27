@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getDaily, clearDailyCache } from "../nws/daily.js";
-import { clearPointCache } from "../nws/point.js";
+import { clearPointCache, evictPoint } from "../nws/point.js";
 import { clearHourlyCache } from "../nws/hourly.js";
 import { setRetrySleep } from "../helpers.js";
 import { NWS_API } from "../nws/http.js";
@@ -387,5 +387,74 @@ describe("getDaily — a failed point lookup serves the stored forecast", () => 
     expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW })).toBeNull();
     expect(get).not.toHaveBeenCalled();
     expect(f.calls).toHaveLength(1);
+  });
+});
+
+describe("getDaily — a failed point lookup uses the forecast already in memory (B-015)", () => {
+  beforeEach(() => {
+    setRetrySleep(async () => {});
+    clearPointCache();
+    clearDailyCache();
+  });
+  afterEach(() => setRetrySleep(null));
+
+  /** A good forecast at `at`, then the point evicted so the next lookup has to ask. */
+  async function warmAt(at: number, store?: WeatherStore) {
+    const r = await getDaily(COORDS, { fetchImpl: happy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    evictPoint(COORDS);
+    return r!;
+  }
+
+  it("fresh in memory, points 500, no store: the same forecast, not stale, and only the points URL is asked", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 10 * 60_000 });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past its fresh window inside 24 h, points 500: the in-memory forecast, stale, with its own fetchedAt", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 2 * HOUR });
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.days).toEqual(warm.days);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past 24 h, points 500, no store: null, and only the points URL is asked", async () => {
+    await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 25 * HOUR })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("in memory and in the store, points 500: the in-memory forecast wins over an older stored copy", async () => {
+    const store = memoryStore();
+    const warm = await warmAt(NOW, store);
+    const raw = JSON.parse(store.data.get(STORE_KEY)!) as { fetchedAt: number; data: unknown };
+    store.data.set(STORE_KEY, JSON.stringify({ ...raw, fetchedAt: NOW - 3 * HOUR }));
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW + 10 * 60_000 });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+  });
+
+  it("radar on, fresh in memory, points 500: no radar request, the forecast unchanged and no rainSource", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 10 * 60_000, radar: true });
+    expect(r).toEqual(warm);
+    expect(r!.days.some((d) => d.rainSource !== undefined)).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
 });

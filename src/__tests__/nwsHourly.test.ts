@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getHourly, clearHourlyCache } from "../nws/hourly.js";
-import { clearPointCache } from "../nws/point.js";
+import { clearPointCache, evictPoint } from "../nws/point.js";
 import { clearGridCache } from "../nws/grid.js";
 import { NWS_API } from "../nws/http.js";
 import { getEventWeather } from "../event.js";
@@ -471,5 +471,84 @@ describe("getHourly — a stored body without the gridAvailable field reads as n
     expect(r!.stamp.stale).toBe(true);
     expect(r!.gridAvailable).toBe(false);
     expect(r!.hours).toHaveLength(30);
+  });
+});
+
+describe("getHourly — a failed point lookup uses the reading already in memory (B-015)", () => {
+  const MIN = 60_000;
+  const HOUR = 3600_000;
+
+  beforeEach(() => {
+    setRetrySleep(async () => {});
+    clearPointCache();
+    clearGridCache();
+    clearHourlyCache();
+  });
+  afterEach(() => setRetrySleep(null));
+
+  /** A good reading at `at`, then the point evicted so the next lookup has to ask. */
+  async function warmAt(at: number, store?: WeatherStore) {
+    const r = await getHourly(COORDS, { fetchImpl: happy().fetchImpl, store, now: () => at });
+    expect(r).not.toBeNull();
+    evictPoint(COORDS);
+    return r!;
+  }
+
+  it("fresh in memory, points 500, no store: the same reading, not stale, and only the points URL is asked", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getHourly(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 10 * MIN });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    expect(f.calls).toHaveLength(2);
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past its fresh window inside the maximum age, points 500: the in-memory reading, stale, with its own fetchedAt", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    const onError = vi.fn();
+    const r = await getHourly(COORDS, { fetchImpl: f.fetchImpl, onError, now: () => NOW + 2 * HOUR });
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.hours).toEqual(warm.hours);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+    // The point's own failure is reported once; the held read reports nothing.
+    expect(onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call)).toEqual(["getPoint"]);
+  });
+
+  it("past the maximum age, points 500, no store: null, and only the points URL is asked", async () => {
+    await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    expect(await getHourly(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 13 * HOUR })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
+  it("in memory and in the store, points 500: the in-memory reading wins over an older stored copy", async () => {
+    const store = memoryStore();
+    const warm = await warmAt(NOW, store);
+    const raw = JSON.parse(store.data.get(STORE_KEY)!) as { fetchedAt: number; data: unknown };
+    store.data.set(STORE_KEY, JSON.stringify({ ...raw, fetchedAt: NOW - 3 * HOUR }));
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getHourly(COORDS, { fetchImpl: f.fetchImpl, store, now: () => NOW + 10 * MIN });
+    expect(r).toEqual(warm);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.stamp.stale).toBe(false);
+  });
+
+  it("a reading without its grid is fresh for five minutes only: at ten minutes it is served stale", async () => {
+    const grid500 = happy({ [GRID_URL]: fail(500) });
+    const warm = await getHourly(COORDS, { fetchImpl: grid500.fetchImpl, now: () => NOW });
+    expect(warm!.gridAvailable).toBe(false);
+    evictPoint(COORDS);
+    const f = router({ [POINT_URL]: fail(500) });
+    const r = await getHourly(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 10 * MIN });
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.stamp.fetchedAt).toBe(NOW);
+    expect(r!.gridAvailable).toBe(false);
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
 });

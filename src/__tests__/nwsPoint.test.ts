@@ -336,3 +336,57 @@ describe("the hold after a failed lookup", () => {
     expect(calls).toHaveLength(3);
   });
 });
+
+describe("the hold after a failed lookup: clock steps, 404s and evictions (B-016)", () => {
+  beforeEach(() => {
+    clearPointCache();
+    setRetrySleep(async () => {});
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => {
+    setRetrySleep(null);
+    vi.useRealTimers();
+  });
+
+  it("a clock that stepped back an hour is not held: the lookup asks again", async () => {
+    const s = { status: 500 };
+    const { calls, fetchImpl } = byUrl(() => s.status);
+    await lookupPoint(COORDS, { fetchImpl });
+    expect(calls).toHaveLength(2);
+
+    vi.setSystemTime(T0 - 3600_000);
+    s.status = 200;
+    const r = await lookupPoint(COORDS, { fetchImpl });
+    expect(r.status).toBe("ok");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("a 404 does not start a hold: after evictPoint the next lookup asks again and is outside", async () => {
+    const { calls, fetchImpl } = byUrl(() => 404);
+    expect(await lookupPoint(COORDS, { fetchImpl })).toEqual({ status: "outside" });
+    expect(calls).toHaveLength(1);
+
+    evictPoint(COORDS);
+    expect(await lookupPoint(COORDS, { fetchImpl })).toEqual({ status: "outside" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("an eviction drops the point a hold would serve: inside the hold, the lookup is failed with no request", async () => {
+    const s = { status: 200 };
+    const { calls, fetchImpl } = byUrl(() => s.status);
+    const onError = vi.fn();
+    await lookupPoint(COORDS, { fetchImpl, onError });
+    expect(calls).toHaveLength(1);
+
+    vi.setSystemTime(T0 + DAY + 3600_000);
+    s.status = 500;
+    expect((await lookupPoint(COORDS, { fetchImpl, onError })).status).toBe("ok");
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(3);
+
+    evictPoint(COORDS);
+    expect(await lookupPoint(COORDS, { fetchImpl, onError })).toEqual({ status: "failed" });
+    expect(calls).toHaveLength(3);
+  });
+});
