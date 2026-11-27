@@ -11,8 +11,8 @@ import { readLastGood, writeLastGood } from "../store.js";
 import { conditionFromNwsIcon } from "../condition.js";
 import { cToF, kmhToMph, mmToIn, mToMi } from "../units.js";
 import { getGrid, gridValueAt } from "./grid.js";
-import { evictPoint, getPoint } from "./point.js";
-import { nwsJson } from "./http.js";
+import { getPoint } from "./point.js";
+import { fetchPeriods } from "./periods.js";
 const STORE_PREFIX = "aw:hourly:";
 const hourlyCache = new WeatherCache(FRESH_MS.hourly, 200, RESILIENT_CACHE);
 /** At most four decimals, trailing zeros dropped: the same key as the point cache. */
@@ -85,25 +85,10 @@ function amounts(layers, name) {
  * empty and reports one `onError`.
  */
 async function fetchHourly(coords, first, opts, now) {
-    let current = first;
-    let body = await nwsJson(current.forecastHourly, opts);
-    if (body === null) {
-        // The point may have moved to another grid: look it up afresh, once.
-        evictPoint(coords);
-        const fresh = await getPoint(coords, opts);
-        if (!fresh)
-            throw new Error("NWS hourly: point gone after a 404");
-        current = fresh;
-        body = await nwsJson(current.forecastHourly, opts);
-        if (body === null)
-            throw new Error("NWS hourly: forecast 404 twice");
-    }
-    const props = rec(rec(body)?.properties);
-    if (!props || !Array.isArray(props.periods))
-        throw new Error("NWS hourly: no periods");
+    const { point: current, props, periods } = await fetchPeriods(coords, first, opts, (p) => p.forecastHourly, "NWS hourly");
     const layers = await getGrid(coords, opts);
     const hours = [];
-    for (const raw of props.periods) {
+    for (const raw of periods) {
         const p = rec(raw);
         if (!p)
             continue;
