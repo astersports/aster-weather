@@ -1620,6 +1620,31 @@ function agingRouter(
   return { fetchImpl, calls: base.calls, radarRead };
 }
 
+/**
+ * Read the radar answer back from its cache, with no new radar request. The
+ * answer carries the clock it was read at, so this proves when the radar read
+ * happened and whether it kept the frame. A null here means the read dropped
+ * the frame, not that the caller made no claim.
+ */
+async function readBackRadar(r: { fetchImpl: FetchImpl; calls: string[] }, clock: { at: number }) {
+  const before = r.calls.filter(isRadarCall).length;
+  const answer = await settle(getRadarRain(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at }));
+  expect(r.calls.filter(isRadarCall).length, "served from the radar cache: no new radar request").toBe(before);
+  return answer;
+}
+
+/** The radar kept the frame at the read, and the read ran at `readAt`, before any clock advance. */
+function expectRadarReadLive(
+  answer: { rainingNow: boolean; checkedAt: number; latestFrameAt: number | null } | null,
+  readAt: number,
+  frameAt: number,
+) {
+  expect(answer, "the radar kept the frame at the read").not.toBeNull();
+  expect(answer!.rainingNow).toBe(true);
+  expect(answer!.checkedAt, "the read ran at the start clock, not after the advance").toBe(readAt);
+  expect(answer!.latestFrameAt).toBe(frameAt);
+}
+
 describe("B-013 — a frame that ages out while the reading loads does not claim", () => {
   it("rainClaimFrom moves on past an aged-out frame: green 25 min old then green 15 min old claims the 15-minute frame", () => {
     expect(
@@ -1657,6 +1682,7 @@ describe("B-013 — a frame that ages out while the reading loads does not claim
     expect(n!.condition).toBe("mostly-cloudy");
     expect(n).not.toHaveProperty("rainSource");
     expect(n).not.toHaveProperty("radarAt");
+    expectRadarReadLive(await readBackRadar(r, clock), NOW, NOW - (20 * MIN - 1000));
   });
 
   it("control: the same frame with the clock still at the start claims, stamped with its own time", async () => {
@@ -1665,6 +1691,7 @@ describe("B-013 — a frame that ages out while the reading loads does not claim
     const n = await settle(getNow(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at, radar: true }));
     expect(r.radarRead.at).toBe(NOW);
     expect(n).toMatchObject({ condition: "light-rain", rainSource: "radar", radarAt: NOW - (20 * MIN - 1000) });
+    expectRadarReadLive(await readBackRadar(r, clock), NOW, NOW - (20 * MIN - 1000));
   });
 
   it("getDaily: a frame live when read, aged out when the forecast has loaded 5 s later, leaves today dry", async () => {
@@ -1677,6 +1704,7 @@ describe("B-013 — a frame that ages out while the reading loads does not claim
     expect(today).not.toHaveProperty("rainSource");
     expect(today).not.toHaveProperty("radarAt");
     expect(today.dayCondition).toBe("mostly-cloudy");
+    expectRadarReadLive(await readBackRadar(r, clock), DAY_AT, DAY_AT - (20 * MIN - 1000));
   });
 
   it("control: the same frame with the clock still at the start makes today wet, stamped with its own time", async () => {
@@ -1688,5 +1716,6 @@ describe("B-013 — a frame that ages out while the reading loads does not claim
       rainSource: "radar",
       dayCondition: "light-rain",
     });
+    expectRadarReadLive(await readBackRadar(r, clock), DAY_AT, DAY_AT - (20 * MIN - 1000));
   });
 });

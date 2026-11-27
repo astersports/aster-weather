@@ -408,6 +408,11 @@ describe("B-013 through getWeather: a frame that ages out while the report loads
     expect(out.daily!.days[0]).not.toHaveProperty("rainSource");
     expect(out.daily!.days[0]).not.toHaveProperty("radarAt");
     expect(isPrecipitation(out.daily!.days[0]!.dayCondition)).toBe(false);
+    // The radar kept the frame at its read, and that read ran at the start clock, before the advance.
+    expect(out.radar, "the radar kept the frame at the read").not.toBeNull();
+    expect(out.radar!.rainingNow).toBe(true);
+    expect(out.radar!.checkedAt, "the read ran at the start clock").toBe(NOW);
+    expect(out.radar!.latestFrameAt).toBe(NOW - (20 * 60_000 - 1000));
   });
 
   it("control: the same frame with the clock still at the start makes now and today wet", async () => {
@@ -418,6 +423,10 @@ describe("B-013 through getWeather: a frame that ages out while the report loads
     expect(out.fetchedAt).toBe(NOW);
     expect(out.now).toMatchObject({ rainSource: "radar", radarAt: NOW - (20 * 60_000 - 1000) });
     expect(out.daily!.days[0]).toMatchObject({ rainSource: "radar" });
+    expect(out.radar, "the radar kept the frame at the read").not.toBeNull();
+    expect(out.radar!.rainingNow).toBe(true);
+    expect(out.radar!.checkedAt, "the read ran at the start clock").toBe(NOW);
+    expect(out.radar!.latestFrameAt).toBe(NOW - (20 * 60_000 - 1000));
   });
 });
 
