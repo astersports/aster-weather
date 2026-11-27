@@ -374,6 +374,50 @@ describe("getSun — the point is read first; simultaneous callers share one ref
     expect(await getSun(C, { fetchImpl: broken.fetchImpl, now: () => T0 + DAY + 31_000 })).toBeNull();
     expect(broken.calls.length).toBeGreaterThan(afterFailure);
   });
+
+  describe("simultaneous callers straddling local midnight", () => {
+    // New York: caller A is still 27 November, caller B is already 28 November.
+    const A_NOW = Date.parse("2026-11-27T23:59:59-05:00");
+    const B_NOW = Date.parse("2026-11-28T00:00:01-05:00");
+    const DAY27_SUNRISE = 1795780591000;
+    const DAY27_TIMES = {
+      sunrise: 1795780591000,
+      sunset: 1795814934000,
+      firstLight: Date.parse("2026-11-27T06:26:18-05:00"),
+      lastLight: Date.parse("2026-11-27T16:59:07-05:00"),
+      dayLengthMs: 34343000,
+    };
+
+    /** Warm the point cache with day-26 sun data, then answer day-27 data for the shared refresh. */
+    async function warmToDay26() {
+      const warm = stub(200, shiftedBy(-24));
+      const day26 = await getSun(C, { fetchImpl: warm.fetchImpl, now: () => Date.parse("2026-11-26T12:00:00-05:00") });
+      expect(day26).toMatchObject({ sunrise: DAY27_SUNRISE - DAY });
+      return stub(200); // the lookup now answers the unshifted day-27 fixture
+    }
+
+    it("caller A (27 Nov, starts first) gets day-27 times and caller B (28 Nov) gets null, from one shared refresh", async () => {
+      const after = await warmToDay26();
+      const [a, b] = await Promise.all([
+        getSun(C, { fetchImpl: after.fetchImpl, now: () => A_NOW }),
+        getSun(C, { fetchImpl: after.fetchImpl, now: () => B_NOW }),
+      ]);
+      expect(a).toEqual(DAY27_TIMES);
+      expect(b).toBeNull();
+      expect(after.calls).toEqual([POINTS_URL]);
+    });
+
+    it("caller B (28 Nov, starts first) gets null and caller A (27 Nov) gets day-27 times, from one shared refresh", async () => {
+      const after = await warmToDay26();
+      const [b, a] = await Promise.all([
+        getSun(C, { fetchImpl: after.fetchImpl, now: () => B_NOW }),
+        getSun(C, { fetchImpl: after.fetchImpl, now: () => A_NOW }),
+      ]);
+      expect(b).toBeNull();
+      expect(a).toEqual(DAY27_TIMES);
+      expect(after.calls).toEqual([POINTS_URL]);
+    });
+  });
 });
 
 describe("getMoon", () => {
