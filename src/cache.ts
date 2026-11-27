@@ -167,6 +167,13 @@ export class WeatherCache<T> {
     }
   }
 
+  /** Remove one key from the store, the in-flight map and the refreshing set. */
+  delete(key: string): void {
+    this.store.delete(key);
+    this.inflight.delete(key);
+    this.refreshing.delete(key);
+  }
+
   /** Clear the cache + any in-flight jobs (test hook / consumer sign-out hygiene). */
   clear(): void {
     this.store.clear();

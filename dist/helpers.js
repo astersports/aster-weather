@@ -138,4 +138,47 @@ export async function fetchJsonWithTimeout(url, opts = {}) {
         clearTimeout(timeoutId);
     }
 }
+/**
+ * Fetch a URL and return its HTTP status with its parsed JSON body, under the
+ * SAME single abort/timeout deadline as {@link fetchJsonWithTimeout} (the
+ * headers read and the body read share one budget).
+ *
+ * Unlike `fetchJsonWithTimeout`, a non-2xx response does NOT throw: it returns
+ * `{ status, body: null }` so the caller can tell a 404 from a 500. Throws on
+ * timeout, on a network failure and on a JSON parse failure of a 2xx body.
+ * `headers` is passed to the fetch impl only when given. Internal, un-exported.
+ */
+export async function fetchJsonStatus(url, opts = {}) {
+    const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
+    const controller = new AbortController();
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            controller.abort(); // free a well-behaved impl's socket (headers OR body)
+            reject(new Error(`fetch timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+    });
+    const fetchAndParse = async () => {
+        const impl = opts.fetchImpl ??
+            (typeof fetch !== "undefined"
+                ? fetch
+                : undefined);
+        if (!impl)
+            throw new Error("No fetch implementation available");
+        const init = opts.headers
+            ? { signal: controller.signal, headers: opts.headers }
+            : { signal: controller.signal };
+        const res = await impl(url, init);
+        if (!res.ok)
+            return { status: res.status, body: null };
+        // The body read is INSIDE the race, same as fetchJsonWithTimeout.
+        return { status: res.status, body: await res.json() };
+    };
+    try {
+        return await Promise.race([fetchAndParse(), timeout]);
+    }
+    finally {
+        clearTimeout(timeoutId);
+    }
+}
 //# sourceMappingURL=helpers.js.map

@@ -190,7 +190,7 @@ export interface DailyForecast {
  */
 export type FetchImpl = (
   url: string,
-  init?: { signal?: AbortSignal },
+  init?: { signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{
   ok: boolean;
   status: number;
@@ -202,7 +202,14 @@ export type WeatherCall =
   | "fetchForecast"
   | "getCurrentWeather"
   | "getDailyForecast"
-  | "getNowcast";
+  | "getNowcast"
+  | "getPoint"
+  | "getHourly"
+  | "getGrid"
+  | "getDaily"
+  | "getNow"
+  | "getAlerts"
+  | "getRadarRain";
 
 /**
  * Context passed to {@link FetchOptions.onError} so a consumer can tag the
