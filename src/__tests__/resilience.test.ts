@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { WeatherCache } from "../cache.js";
 import {
   fetchForecast,
   getWeatherForEvent,
@@ -214,5 +215,129 @@ describe("WX-P2-20 — venue-local strip label uses the UTC offset (DL-13 lock)"
     expect(ew).not.toBeNull();
     // Dropping the utc_offset term would read UTC hour 22 → "Night".
     expect(ew!.forecastStrip[0].label).toBe("Evening");
+  });
+});
+
+describe("v0.8.0 Task 3 — getWithMeta: age-bounded stale readings", () => {
+  const TTL = 1000;
+
+  it("(a) a fresh entry is returned with stale:false and the loader runs once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return 1;
+    };
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const second = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 500);
+    expect(first).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(second).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+  });
+
+  it("(b) loader fails with an entry younger than maxStaleMs: that entry, stale:true, timestamp unchanged, onError once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      5000,
+      () => 2000, // expired by TTL, age 2000 <= 5000
+    );
+    expect(meta).toEqual({ data: 1, fetchedAt: 0, stale: true });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("(c) loader fails with an entry older than maxStaleMs: empty, stale:false, the entry is dropped so the next call runs the loader", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    const onError = vi.fn();
+    const failed = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      1000,
+      () => 2000, // age 2000 > 1000
+    );
+    expect(failed).toEqual({ data: -1, fetchedAt: 2000, stale: false });
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    let runs = 0;
+    const next = await cache.getWithMeta(
+      "k",
+      async () => {
+        runs += 1;
+        return 9;
+      },
+      -1,
+      undefined,
+      1000,
+      () => 2100,
+    );
+    expect(runs).toBe(1); // the old entry is gone, so the loader ran
+    expect(next).toEqual({ data: 9, fetchedAt: 2100, stale: false });
+  });
+
+  it("(d) loader fails with no entry: empty, stale:false, onError once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      Infinity,
+      () => 300,
+    );
+    expect(meta).toEqual({ data: -1, fetchedAt: 300, stale: false });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("(e) two concurrent calls on a cold key share one loader run", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const loader = async () => {
+      runs += 1;
+      await gate;
+      return 4;
+    };
+    const p1 = cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const p2 = cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    release();
+    const [a, b] = await Promise.all([p1, p2]);
+    expect(runs).toBe(1);
+    expect(a).toEqual(b);
+    expect(a).toEqual({ data: 4, fetchedAt: 0, stale: false });
+  });
+
+  it("(f) an expired entry is not returned while the loader succeeds: the fresh value comes back", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    let runs = 0;
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        runs += 1;
+        return 2;
+      },
+      -1,
+      undefined,
+      Infinity,
+      () => 5000, // expired
+    );
+    expect(runs).toBe(1);
+    expect(meta).toEqual({ data: 2, fetchedAt: 5000, stale: false });
   });
 });

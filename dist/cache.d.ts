@@ -34,12 +34,20 @@ export interface CacheBehavior {
     /** Injectable sleep (tests inject a controllable one). Default real `setTimeout`. */
     sleep?: (ms: number) => Promise<void>;
 }
+/** A value with its fetch time and whether it is a stale fallback (see getWithMeta). */
+export interface CacheMeta<T> {
+    data: T;
+    fetchedAt: number;
+    stale: boolean;
+}
 export declare class WeatherCache<T> {
     private readonly ttlMs;
     private readonly maxEntries;
     private store;
     /** Blocking cold-fetch dedup (a caller with no cached value to fall back on). */
     private inflight;
+    /** Blocking dedup for getWithMeta (its jobs resolve to CacheMeta, not T). */
+    private metaInflight;
     /** SWR background-refresh dedup — kept separate so it never satisfies a cold caller. */
     private refreshing;
     private readonly retries;
@@ -56,9 +64,28 @@ export declare class WeatherCache<T> {
      */
     get(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void): Promise<T>;
     /**
-     * Run `loader` with bounded retry. On success, caches + returns the value; on
-     * final failure (after `retries` retries), throws the last error. Each attempt
-     * keeps its own downstream timeout budget; a fixed backoff separates attempts.
+     * Age-bounded read for callers that must know how old a value is.
+     *
+     * - A fresh entry (younger than the TTL) is returned with `stale: false`.
+     * - Otherwise the loader runs (deduped, with the same bounded retry). On
+     *   success the value is cached with `fetchedAt` = the time of this fetch.
+     * - If the loader ultimately fails, `onError` fires once. An entry no older
+     *   than `maxStaleMs` is returned with `stale: true` and its timestamp is NOT
+     *   refreshed. An older entry is dropped. With no usable entry, `empty` is
+     *   returned with `stale: false`.
+     *
+     * Unlike `get()`, an expired entry is never returned before the loader has
+     * been tried (no stale-while-revalidate), so an expired reading is never
+     * shown as fresh. Never throws.
+     *
+     * `now` supplies the clock for both age checks and fetch times.
+     */
+    getWithMeta(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void, maxStaleMs?: number, now?: () => number): Promise<CacheMeta<T>>;
+    /**
+     * Run `loader` with bounded retry. On success, caches + returns the value and
+     * the time it was stored; on final failure (after `retries` retries), throws
+     * the last error. Each attempt keeps its own downstream timeout budget; a
+     * fixed backoff separates attempts.
      */
     private runWithRetry;
     /**
