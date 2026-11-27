@@ -62,7 +62,7 @@ export declare class WeatherCache<T> {
      * failure so the stale fallback fires. With SWR on, an expired-but-present
      * entry is returned immediately while a background refresh runs.
      */
-    get(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void): Promise<T>;
+    get(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void, now?: () => number): Promise<T>;
     /**
      * Age-bounded read for callers that must know how old a value is.
      *

@@ -518,3 +518,66 @@ describe("peek — read the cache with no loader, no wait (B-015 held path)", ()
     expect(cache.peek("b", Infinity, () => 0)).toEqual({ data: 2, fetchedAt: 0, stale: false });
   });
 });
+
+describe("B-017: a clock that stepped back", () => {
+  const TTL = 1000;
+  const HOUR = 3600_000;
+  const T = 10 * HOUR;
+
+  async function seeded(): Promise<WeatherCache<number>> {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => T);
+    return cache;
+  }
+
+  it("control: inside the ttl after the fetch, the entry is fresh and nothing loads", async () => {
+    const cache = await seeded();
+    let calls = 0;
+    const r = await cache.getWithMeta("k", async () => (++calls, 8), -1, undefined, Infinity, () => T + TTL / 2);
+    expect(calls).toBe(0);
+    expect(r).toEqual({ data: 7, fetchedAt: T, stale: false });
+  });
+
+  it("getWithMeta with the clock an hour before the fetch calls the loader again", async () => {
+    const cache = await seeded();
+    let calls = 0;
+    const r = await cache.getWithMeta("k", async () => (++calls, 8), -1, undefined, Infinity, () => T - HOUR);
+    expect(calls).toBe(1);
+    expect(r.data).toBe(8);
+  });
+
+  it("if that load fails, the cached value comes back stale:true with its original fetchedAt", async () => {
+    const cache = await seeded();
+    const r = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      undefined,
+      Infinity,
+      () => T - HOUR,
+    );
+    expect(r).toEqual({ data: 7, fetchedAt: T, stale: true });
+  });
+
+  it("peek with the clock an hour before the fetch is stale:true, never fresh", async () => {
+    const cache = await seeded();
+    expect(cache.peek("k", Infinity, () => T - HOUR)).toEqual({ data: 7, fetchedAt: T, stale: true });
+  });
+
+  it("get with the injected clock an hour before the fetch calls the loader", async () => {
+    const cache = await seeded();
+    let calls = 0;
+    await cache.get("k", async () => (++calls, 8), -1, undefined, () => T - HOUR);
+    expect(calls).toBe(1);
+  });
+
+  it("control: get inside the ttl serves the cache with no load", async () => {
+    const cache = await seeded();
+    let calls = 0;
+    const v = await cache.get("k", async () => (++calls, 8), -1, undefined, () => T + TTL / 2);
+    expect(calls).toBe(0);
+    expect(v).toBe(7);
+  });
+});
