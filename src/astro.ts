@@ -72,11 +72,50 @@ function toSunTimes({ sun }: UsableSun): SunTimes {
   };
 }
 
+/** At most one point refresh per coordinate in this window (B-010). */
+export const SUN_REFRESH_AFTER_MS = 15 * 60_000;
+
+/** Coordinates whose last refresh attempt is remembered. The oldest is dropped beyond this. */
+const SUN_REFRESH_LIMIT = 200;
+
+/** The last refresh attempt for one coordinate, and what it brought (null when none usable). */
+interface SunRefresh {
+  at: number;
+  sun: UsableSun | null;
+}
+
+const sunRefreshes = new Map<string, SunRefresh>();
+
+/** At most four decimals, trailing zeros dropped: the same key as the point cache. */
+const fmt = (v: number): string => String(Number(v.toFixed(4)));
+
+/** Store a refresh attempt, most recent last, dropping the oldest beyond the bound. */
+function rememberRefresh(key: string, entry: SunRefresh): void {
+  sunRefreshes.delete(key);
+  sunRefreshes.set(key, entry);
+  while (sunRefreshes.size > SUN_REFRESH_LIMIT) {
+    const oldest = sunRefreshes.keys().next().value;
+    if (oldest === undefined) break;
+    sunRefreshes.delete(oldest);
+  }
+}
+
+/** True while `elapsed` is inside the refresh window (a clock that stepped back is not inside it). */
+const withinRefreshWindow = (elapsed: number): boolean =>
+  elapsed >= 0 && elapsed < SUN_REFRESH_AFTER_MS;
+
+/** Test hook: forget every remembered refresh attempt. */
+export function clearSunRefreshes(): void {
+  sunRefreshes.clear();
+}
+
 /**
  * Today's sun times at the venue, or `null` when the point is outside coverage,
  * the lookup failed, or no sun data for today's local date is available. A cached
- * point from an earlier day is evicted and looked up once more; another day's
- * times are never returned. Never throws.
+ * point from an earlier day is evicted and looked up once more, at most once per
+ * coordinate per {@link SUN_REFRESH_AFTER_MS}; inside that window the last
+ * refresh answers. A venue whose time zone is unusable gets `null` with no
+ * refresh. Another day's times are never returned. Never throws.
  */
 export async function getSun(
   coords: Coords,
@@ -84,12 +123,21 @@ export async function getSun(
 ): Promise<SunTimes | null> {
   try {
     const now = opts.now?.() ?? Date.now();
+    const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
+
+    const last = sunRefreshes.get(key);
+    if (last && withinRefreshWindow(now - last.at)) {
+      return last.sun && isToday(last.sun, now) ? toSunTimes(last.sun) : null;
+    }
+
     const first = usableSun(await getPoint(coords, opts));
-    if (!first) return null;
+    if (!first || localDay(now, first.zone) === null) return null;
     if (isToday(first, now)) return toSunTimes(first);
 
+    rememberRefresh(key, { at: now, sun: null });
     evictPoint(coords);
     const fresh = usableSun(await getPoint(coords, opts));
+    rememberRefresh(key, { at: now, sun: fresh });
     return fresh && isToday(fresh, now) ? toSunTimes(fresh) : null;
   } catch {
     return null;

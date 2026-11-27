@@ -49,6 +49,13 @@ export interface HourlyResult {
   rain: AmountBlock[];
   snow: AmountBlock[];
   ice: AmountBlock[];
+  /**
+   * `true` when the grid was merged into the hours. `false` when the grid could
+   * not be read for this load: the grid-derived fields (feels-like, gusts,
+   * amounts, cloud, humidity, thunder, visibility, heat stress) are then `null`,
+   * and the engine asks for the grid again after five minutes.
+   */
+  gridAvailable: boolean;
 }
 
 /** The cached body: the stamp's `fetchedAt` and `stale` come from the cache meta. */
@@ -59,9 +66,13 @@ interface HourlyBody {
   rain: AmountBlock[];
   snow: AmountBlock[];
   ice: AmountBlock[];
+  gridAvailable: boolean;
 }
 
 const STORE_PREFIX = "aw:hourly:";
+
+/** How long an hourly load without its grid is kept before the grid is asked again (B-003). */
+export const GRID_RETRY_AFTER_MS = 5 * 60_000;
 
 const hourlyCache = new WeatherCache<HourlyBody | null>(
   FRESH_MS.hourly,
@@ -176,6 +187,7 @@ async function fetchHourly(
     rain: amounts(layers, "quantitativePrecipitation"),
     snow: amounts(layers, "snowfallAmount"),
     ice: amounts(layers, "iceAccumulation"),
+    gridAvailable: layers !== null,
   };
 }
 
@@ -187,6 +199,8 @@ function withStamp(b: HourlyBody, fetchedAt: number, stale: boolean): HourlyResu
     rain: b.rain,
     snow: b.snow,
     ice: b.ice,
+    // A body stored before this field existed reads as no grid: its grid may be missing.
+    gridAvailable: b.gridAvailable === true,
   };
 }
 
@@ -217,6 +231,7 @@ export async function getHourly(
     bindOnError(opts, "getHourly", lat, lon),
     MAX_AGE_MS.hourly,
     now,
+    (body) => (body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly),
   );
   if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
 

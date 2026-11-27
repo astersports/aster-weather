@@ -79,8 +79,12 @@ export declare class WeatherCache<T> {
      * shown as fresh. Never throws.
      *
      * `now` supplies the clock for both age checks and fetch times.
+     *
+     * `freshFor`, when given, reads how long a cached value stays fresh, from the
+     * value itself. The result is capped by the cache's own TTL, so it can only
+     * shorten freshness. Without it the TTL alone decides.
      */
-    getWithMeta(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void, maxStaleMs?: number, now?: () => number): Promise<CacheMeta<T>>;
+    getWithMeta(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void, maxStaleMs?: number, now?: () => number, freshFor?: (data: T) => number): Promise<CacheMeta<T>>;
     /**
      * Run `loader` with bounded retry. On success, caches + returns the value and
      * the time it was stored; on final failure (after `retries` retries), throws

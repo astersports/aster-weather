@@ -14,6 +14,8 @@ import { getGrid, gridValueAt } from "./grid.js";
 import { getPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 const STORE_PREFIX = "aw:hourly:";
+/** How long an hourly load without its grid is kept before the grid is asked again (B-003). */
+export const GRID_RETRY_AFTER_MS = 5 * 60_000;
 const hourlyCache = new WeatherCache(FRESH_MS.hourly, 200, RESILIENT_CACHE);
 /** At most four decimals, trailing zeros dropped: the same key as the point cache. */
 const fmt = (v) => String(Number(v.toFixed(4)));
@@ -104,6 +106,7 @@ async function fetchHourly(coords, first, opts, now) {
         rain: amounts(layers, "quantitativePrecipitation"),
         snow: amounts(layers, "snowfallAmount"),
         ice: amounts(layers, "iceAccumulation"),
+        gridAvailable: layers !== null,
     };
 }
 function withStamp(b, fetchedAt, stale) {
@@ -114,6 +117,8 @@ function withStamp(b, fetchedAt, stale) {
         rain: b.rain,
         snow: b.snow,
         ice: b.ice,
+        // A body stored before this field existed reads as no grid: its grid may be missing.
+        gridAvailable: b.gridAvailable === true,
     };
 }
 /**
@@ -133,7 +138,7 @@ export async function getHourly(coords, opts = {}) {
         const body = await fetchHourly(coords, point, opts, now);
         writeLastGood(opts.store, storeKey, body, now());
         return body;
-    }, null, bindOnError(opts, "getHourly", lat, lon), MAX_AGE_MS.hourly, now);
+    }, null, bindOnError(opts, "getHourly", lat, lon), MAX_AGE_MS.hourly, now, (body) => (body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly));
     if (meta.data)
         return withStamp(meta.data, meta.fetchedAt, meta.stale);
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.hourly, now());

@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
-import { getSun, getMoon, type MoonPhase } from "../astro.js";
+import {
+  getSun,
+  getMoon,
+  clearSunRefreshes,
+  SUN_REFRESH_AFTER_MS,
+  type MoonPhase,
+} from "../astro.js";
 import { clearPointCache } from "../nws/point.js";
 import { NWS_API } from "../nws/http.js";
 import type { FetchImpl } from "../types.js";
@@ -41,6 +47,7 @@ function shiftedBy(hours: number): Record<string, unknown> {
 }
 
 beforeEach(() => clearPointCache());
+beforeEach(() => clearSunRefreshes());
 
 // Failure tests never wait on the real retry backoff (B-006).
 beforeEach(() => setRetrySleep(async () => {}));
@@ -166,6 +173,128 @@ describe("getSun — failures and missing data", () => {
       lastLight: Date.parse("2026-11-27T16:59:07-05:00"),
       dayLengthMs: 34343000,
     });
+  });
+});
+
+describe("getSun — one point refresh per coordinate per 15 minutes (B-010)", () => {
+  const B = { lat: 41.04, lon: -73.76 };
+  const B_URL = `${NWS_API}/points/41.04,-73.76`;
+  const SUNRISE_TODAY = 1795780591000;
+  const SUNSET_TODAY = 1795814934000;
+
+  it("refreshes once when the point still answers the old day; three calls on the next day make no more requests", async () => {
+    const { calls, fetchImpl } = stub(200);
+    await getSun(C, { fetchImpl, now: () => T0 });
+    expect(calls).toHaveLength(1);
+
+    const next = () => T0 + DAY;
+    expect(await getSun(C, { fetchImpl, now: next })).toBeNull();
+    expect(await getSun(C, { fetchImpl, now: next })).toBeNull();
+    expect(await getSun(C, { fetchImpl, now: next })).toBeNull();
+    expect(calls).toHaveLength(2);
+
+    // Fifteen minutes on, the window has closed and one more refresh is made.
+    expect(await getSun(C, { fetchImpl, now: () => T0 + DAY + SUN_REFRESH_AFTER_MS })).toBeNull();
+    expect(calls).toHaveLength(3);
+  });
+
+  it("uses the refresh that brings the new day, and makes no further request for it", async () => {
+    const first = stub(200);
+    await getSun(C, { fetchImpl: first.fetchImpl, now: () => T0 });
+
+    const second = stub(200, shiftedBy(24));
+    const opts = { fetchImpl: second.fetchImpl, now: () => T0 + DAY };
+    const nextDay = {
+      sunrise: SUNRISE_TODAY + DAY,
+      sunset: SUNSET_TODAY + DAY,
+      firstLight: Date.parse("2026-11-27T06:26:18-05:00") + DAY,
+      lastLight: Date.parse("2026-11-27T16:59:07-05:00") + DAY,
+      dayLengthMs: 34343000,
+    };
+    expect(await getSun(C, opts)).toEqual(nextDay);
+    expect(await getSun(C, opts)).toEqual(nextDay);
+    expect(await getSun(C, opts)).toEqual(nextDay);
+    expect(second.calls).toHaveLength(1);
+  });
+
+  it.each([
+    ["Not/AZone", "Not/AZone"],
+    ["null", null],
+  ])("a venue with a time zone of %s gets null with no refresh: one point request in total", async (_label, zone) => {
+    const clone = cloned();
+    clone.properties.timeZone = zone;
+    const { calls, fetchImpl } = stub(200, clone);
+    for (let i = 0; i < 3; i += 1) {
+      expect(await getSun(C, { fetchImpl, now: () => T0 })).toBeNull();
+    }
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a refresh that fails gives null, reports getPoint once, and is not asked again within 15 minutes", async () => {
+    const first = stub(200);
+    await getSun(C, { fetchImpl: first.fetchImpl, now: () => T0 });
+
+    const broken = stub(500);
+    const onError = vi.fn();
+    expect(await getSun(C, { fetchImpl: broken.fetchImpl, onError, now: () => T0 + DAY })).toBeNull();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][1].call).toBe("getPoint");
+
+    const requests = broken.calls.length;
+    expect(
+      await getSun(C, { fetchImpl: broken.fetchImpl, onError, now: () => T0 + DAY + 60_000 }),
+    ).toBeNull();
+    expect(broken.calls).toHaveLength(requests);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the local day across the November clock change", async () => {
+    // Sun data dated 2026-11-01 in America/New_York: the fixture's times, 26 days earlier.
+    const { fetchImpl, calls } = stub(200, shiftedBy(-26 * 24));
+    const at2330Est = Date.UTC(2026, 10, 2, 4, 30); // 23:30 on Nov 1, after the change
+    const at0130Edt = Date.UTC(2026, 10, 1, 5, 30); // 01:30 on Nov 1, before the change at 06:00 UTC
+    const at0005Est = Date.UTC(2026, 10, 2, 5, 5); // 00:05 on Nov 2
+
+    const sunrise = SUNRISE_TODAY - 26 * DAY;
+    expect(await getSun(C, { fetchImpl, now: () => at2330Est })).toMatchObject({ sunrise });
+    expect(await getSun(C, { fetchImpl, now: () => at0130Edt })).toMatchObject({ sunrise });
+    expect(calls).toHaveLength(1);
+    expect(await getSun(C, { fetchImpl, now: () => at0005Est })).toBeNull();
+  });
+
+  it("limits each coordinate separately", async () => {
+    const { calls, fetchImpl } = stub(200);
+    const cUrl = POINTS_URL;
+    await getSun(C, { fetchImpl, now: () => T0 });
+    await getSun(B, { fetchImpl, now: () => T0 });
+
+    await getSun(C, { fetchImpl, now: () => T0 + DAY }); // C refreshes and is now limited
+    const cAfter = calls.filter((u) => u === cUrl).length;
+
+    await getSun(B, { fetchImpl, now: () => T0 + DAY }); // B has its own window: it refreshes too
+    expect(calls.filter((u) => u === B_URL)).toHaveLength(2);
+
+    await getSun(C, { fetchImpl, now: () => T0 + DAY + 60_000 });
+    expect(calls.filter((u) => u === cUrl)).toHaveLength(cAfter);
+  });
+
+  it("remembers at most 200 coordinates, so the oldest one may refresh again", async () => {
+    const { calls, fetchImpl } = stub(200);
+    const at = (i: number) => ({ lat: 40 + i / 1000, lon: -73.76 });
+    const urlOf = (i: number) => `${NWS_API}/points/${Number(at(i).lat.toFixed(4))},-73.76`;
+    for (let i = 0; i <= 200; i += 1) {
+      await getSun(at(i), { fetchImpl, now: () => T0 + DAY });
+    }
+
+    // Coordinate 0 was the oldest and has been forgotten: it refreshes again.
+    const zeroBefore = calls.filter((u) => u === urlOf(0)).length;
+    await getSun(at(0), { fetchImpl, now: () => T0 + DAY });
+    expect(calls.filter((u) => u === urlOf(0)).length).toBeGreaterThan(zeroBefore);
+
+    // The newest coordinate is still inside its window (re-adding coordinate 0 pushed out coordinate 1): no request.
+    const newestBefore = calls.filter((u) => u === urlOf(200)).length;
+    await getSun(at(200), { fetchImpl, now: () => T0 + DAY });
+    expect(calls.filter((u) => u === urlOf(200)).length).toBe(newestBefore);
   });
 });
 

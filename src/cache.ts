@@ -137,6 +137,10 @@ export class WeatherCache<T> {
    * shown as fresh. Never throws.
    *
    * `now` supplies the clock for both age checks and fetch times.
+   *
+   * `freshFor`, when given, reads how long a cached value stays fresh, from the
+   * value itself. The result is capped by the cache's own TTL, so it can only
+   * shorten freshness. Without it the TTL alone decides.
    */
   async getWithMeta(
     key: string,
@@ -145,9 +149,11 @@ export class WeatherCache<T> {
     onError?: (err: unknown) => void,
     maxStaleMs: number = Infinity,
     now: () => number = Date.now,
+    freshFor?: (data: T) => number,
   ): Promise<CacheMeta<T>> {
     const cached = this.store.get(key);
-    if (cached && now() - cached.fetchedAt < this.ttlMs) {
+    const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshFor(cached.data)) : this.ttlMs;
+    if (cached && now() - cached.fetchedAt < freshMs) {
       // LRU touch, as in get().
       this.store.delete(key);
       this.store.set(key, cached);

@@ -341,3 +341,71 @@ describe("v0.8.0 Task 3 — getWithMeta: age-bounded stale readings", () => {
     expect(meta).toEqual({ data: 2, fetchedAt: 5000, stale: false });
   });
 });
+
+describe("B-003 — getWithMeta freshFor: a value can shorten its own freshness", () => {
+  const TTL = 1000;
+
+  it("reuses an entry inside the shorter freshFor time and reloads it after", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const freshFor = () => 200;
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, freshFor);
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 199, freshFor);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+    const after = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 200, freshFor);
+    expect(first.data).toBe(1);
+    expect(after).toEqual({ data: 2, fetchedAt: 200, stale: false });
+    expect(runs).toBe(2);
+  });
+
+  it("a freshFor longer than the cache's ttl does not outlive the ttl", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const freshFor = () => 10 * TTL;
+    await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, freshFor);
+    const expired = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL, freshFor);
+    expect(expired).toEqual({ data: 2, fetchedAt: TTL, stale: false });
+    expect(runs).toBe(2);
+  });
+
+  it("without freshFor the cache's own ttl decides, as before", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL - 1);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+  });
+
+  it("a failed reload past the shorter freshFor serves the entry as stale, with its original fetchedAt", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0, () => 200);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      5000,
+      () => 300,
+      () => 200,
+    );
+    expect(meta).toEqual({ data: 7, fetchedAt: 0, stale: true });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
