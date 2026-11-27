@@ -149,6 +149,28 @@ export class WeatherCache {
         return job;
     }
     /**
+     * Read a cached entry without loading anything. A fresh entry comes back
+     * `stale: false`; an entry past its freshness but no older than `maxStaleMs`
+     * comes back `stale: true`, with its original `fetchedAt`; no entry, or an older
+     * one, is `null`. Never calls a loader, never reports, never waits, and never
+     * changes the cache.
+     *
+     * Freshness is decided as in `getWithMeta`: the cache's ttl, shortened by
+     * `freshFor` when given (a throw falls back to the ttl).
+     */
+    peek(key, maxStaleMs = Infinity, now = Date.now, freshFor) {
+        const cached = this.store.get(key);
+        if (!cached)
+            return null;
+        const freshMs = freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
+        const age = now() - cached.fetchedAt;
+        if (age < freshMs)
+            return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
+        if (age <= maxStaleMs)
+            return { data: cached.data, fetchedAt: cached.fetchedAt, stale: true };
+        return null;
+    }
+    /**
      * Run `loader` with bounded retry. On success, caches + returns the value and
      * the time it was stored; on final failure (after `retries` retries), throws
      * the last error. Each attempt keeps its own downstream timeout budget; a

@@ -147,10 +147,8 @@ export async function getNow(coords, opts = {}) {
  */
 async function heldNow(coords, opts, now) {
     const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
-    const held = await nowCache.getWithMeta(key, async () => {
-        throw new Error("now: point lookup failed");
-    }, null, undefined, MAX_AGE_MS.now, now);
-    if (held.data)
+    const held = nowCache.peek(key, MAX_AGE_MS.now, now);
+    if (held?.data)
         return withStamp(held.data, held.fetchedAt, held.stale);
     return readStoredNow(coords, opts, now);
 }

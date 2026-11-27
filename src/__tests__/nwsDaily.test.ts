@@ -457,4 +457,38 @@ describe("getDaily — a failed point lookup uses the forecast already in memory
     expect(r!.days.some((d) => d.rainSource !== undefined)).toBe(false);
     expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
+
+  it("no waiting on the failed path: a stale in-memory forecast is served with no retry sleep", async () => {
+    const warm = await warmAt(NOW);
+    const at = NOW + 2 * HOUR;
+    const f = router({ [POINT_URL]: fail(500) });
+    // This lookup fails once (its own point retry is not counted) and starts the hold.
+    await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => at });
+    const sleeps: number[] = [];
+    setRetrySleep(async (ms) => {
+      sleeps.push(ms);
+    });
+    const held = await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => at + 1 });
+    expect(held!.stamp.stale).toBe(true);
+    expect(held!.stamp.fetchedAt).toBe(NOW);
+    expect(held!.days).toEqual(warm.days);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("no waiting on the failed path: a cold cache with a stored copy is read with no retry sleep", async () => {
+    const store = memoryStore();
+    const warm = await warmAt(NOW, store);
+    const at = NOW + 2 * HOUR;
+    const f = router({ [POINT_URL]: fail(500) });
+    await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => at });
+    clearDailyCache();
+    const sleeps: number[] = [];
+    setRetrySleep(async (ms) => {
+      sleeps.push(ms);
+    });
+    const stored = await getDaily(COORDS, { fetchImpl: f.fetchImpl, store, now: () => at + 1 });
+    expect(stored!.stamp.stale).toBe(true);
+    expect(stored!.days).toEqual(warm.days);
+    expect(sleeps).toEqual([]);
+  });
 });

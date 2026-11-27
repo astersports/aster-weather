@@ -451,4 +451,38 @@ describe("getNow — a failed point lookup uses the reading already in memory (B
     expect(r!.rainSource).toBeUndefined();
     expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
+
+  it("no waiting on the failed path: a stale in-memory reading is served with no retry sleep", async () => {
+    const warm = await warmAt(NOW);
+    const at = NOW + 2 * HOUR;
+    const f = router({ [POINT_URL]: fail(500) });
+    // This lookup fails once and starts the hold.
+    await getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => at });
+    const sleeps: number[] = [];
+    setRetrySleep(async (ms) => {
+      sleeps.push(ms);
+    });
+    const held = await getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => at + 1 });
+    expect(held!.stamp.stale).toBe(true);
+    expect(held!.stamp.fetchedAt).toBe(NOW);
+    expect(held!.temperature).toBe(warm.temperature);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("no waiting on the failed path: a cold cache with a stored copy is read with no retry sleep", async () => {
+    const store = memoryStore();
+    const warm = await warmAt(NOW, store);
+    const at = NOW + 2 * HOUR;
+    const f = router({ [POINT_URL]: fail(500) });
+    await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => at });
+    clearNowCache();
+    const sleeps: number[] = [];
+    setRetrySleep(async (ms) => {
+      sleeps.push(ms);
+    });
+    const stored = await getNow(COORDS, { fetchImpl: f.fetchImpl, store, now: () => at + 1 });
+    expect(stored!.stamp.stale).toBe(true);
+    expect(stored!.temperature).toBe(warm.temperature);
+    expect(sleeps).toEqual([]);
+  });
 });

@@ -258,18 +258,8 @@ async function heldHourly(
   opts: EngineOptions,
   now: () => number,
 ): Promise<HourlyResult | null> {
-  const held = await hourlyCache.getWithMeta(
-    key,
-    async () => {
-      throw new Error("hourly: point lookup failed");
-    },
-    null,
-    undefined,
-    MAX_AGE_MS.hourly,
-    now,
-    hourlyFreshFor,
-  );
-  if (held.data) return withStamp(held.data, held.fetchedAt, held.stale);
+  const held = hourlyCache.peek(key, MAX_AGE_MS.hourly, now, hourlyFreshFor);
+  if (held?.data) return withStamp(held.data, held.fetchedAt, held.stale);
   return storedHourly(storeKey, opts, now);
 }
 

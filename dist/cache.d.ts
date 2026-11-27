@@ -86,6 +86,17 @@ export declare class WeatherCache<T> {
      */
     getWithMeta(key: string, loader: () => Promise<T>, empty: T, onError?: (err: unknown) => void, maxStaleMs?: number, now?: () => number, freshFor?: (data: T) => number): Promise<CacheMeta<T>>;
     /**
+     * Read a cached entry without loading anything. A fresh entry comes back
+     * `stale: false`; an entry past its freshness but no older than `maxStaleMs`
+     * comes back `stale: true`, with its original `fetchedAt`; no entry, or an older
+     * one, is `null`. Never calls a loader, never reports, never waits, and never
+     * changes the cache.
+     *
+     * Freshness is decided as in `getWithMeta`: the cache's ttl, shortened by
+     * `freshFor` when given (a throw falls back to the ttl).
+     */
+    peek(key: string, maxStaleMs?: number, now?: () => number, freshFor?: (data: T) => number): CacheMeta<T> | null;
+    /**
      * Run `loader` with bounded retry. On success, caches + returns the value and
      * the time it was stored; on final failure (after `retries` retries), throws
      * the last error. Each attempt keeps its own downstream timeout budget; a
