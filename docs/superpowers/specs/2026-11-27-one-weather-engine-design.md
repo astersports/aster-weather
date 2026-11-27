@@ -1,7 +1,8 @@
 # The Aster weather service — design
 
 2026-11-27 · Status: **approved by the owner, with the mock-up, on 2026-11-27. Build plans:
-`docs/superpowers/plans/`. Nothing in this design has shipped until its release is tagged.**
+`docs/superpowers/plans/`. Released so far: `v0.7.0` and `v0.8.0`, both on 2026-11-27.
+`v0.9.0` onward is not built. Nothing later has shipped until its release is tagged.**
 
 Mock-up (real readings, one venue, both themes, every icon):
 https://claude.ai/artifact/RZnQHSqA3XWPxu3wyRxfub
@@ -82,7 +83,7 @@ any lawful purpose", provided nothing implies NWS endorsement.
   `mapservices.weather.noaa.gov`, `data.epa.gov`, `www.nhc.noaa.gov`.
 - NWS asks servers for an identifying `User-Agent`; browsers cannot set one.
 - Zero runtime dependencies. `dist/` committed. `react` stays an optional peer.
-- `v0.7.0` is reserved. Each minor is held until its merge commit carries
+- Each minor is held until its merge commit carries
   `[release-approved]`, which only the owner grants.
 - Tests run on recorded fixtures, with no live network.
 - This repo is public: no secrets, no production values.
@@ -209,8 +210,8 @@ is the owner ruling that §2 requires.
 
 | Tag | Contents | Kind |
 |---|---|---|
-| `v0.7.0` | Nullable weather code (reserved) | Breaking |
-| `v0.8.0` | Engine: now, hourly with the grid, daily, alerts, radar, sun and moon, event function, provenance, store | Additive |
+| `v0.7.0` | Nullable weather code (released 2026-11-27) | Breaking |
+| `v0.8.0` | Engine: now, hourly with the grid, daily, alerts, radar, sun and moon, event function, provenance, store (released 2026-11-27) | Additive |
 | `v0.9.0` | Icons and glyphs | Breaking for exhaustive switches on the icon key |
 | `v0.10.0` | Page parts for everything in `v0.8.0` | Additive |
 | `v0.11.0` | UV, outlooks, heat stress, air quality, and their parts | Additive |
@@ -230,6 +231,9 @@ is the owner ruling that §2 requires.
 2. **Unverified sources:** the radar loop picture, normal-for-the-date, and the
    severe-storm point lookup. Each is dropped if it cannot be verified in the build.
 3. **NWS rate limits** are undisclosed.
+4. **Alerts carry no fetch time** (`docs/BACKLOG.md` B-018). Goal 2 is met for station readings
+   and forecasts, and not yet for alerts: a list served after a failed refresh is not marked
+   stale. Planned for `v0.9.0`, before any page part shows alerts.
 
 ## Decided
 
