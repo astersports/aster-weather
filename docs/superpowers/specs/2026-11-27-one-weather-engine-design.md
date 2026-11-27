@@ -194,6 +194,8 @@ identify unaltered NWS content. Severity maps to three visual levels.
   database store adapter kept.
 - **nova-select:** `server/weather.ts` moves to the package's NWS functions.
 - **aster-io:** the product mock uses the Sky icons and stops naming Open-Meteo.
+- **samaritano-hub** (added 2026-11-27, see Decided): `calendar/extras/wx.mjs` moves from the
+  Open-Meteo fetchers to the package's NWS functions once `v0.10.0` ships, before `v1.0.0`.
 
 Each project places the package's parts where its weather shows today, in its own PR,
 with a before-and-after capture. Each consumer's own weather rules change in the same
@@ -242,3 +244,15 @@ is the owner ruling that §2 requires.
   National Weather Service named as its issuer. Forecast wording stays our own.
 - **The Open-Meteo licence statement** (owner, 2026-11-27): corrected in README and
   CLAUDE.md §2.
+- **The Samaritano Hub is the fifth consumer** (owner, 2026-11-27: "Add Hub as 5th
+  consumer"). This entry adds to the design. Where Goals, the release table or Consumers say
+  "all four consumers", read five; `v1.0.0` waits for the Hub too. What it commits to:
+  - Now: the Hub's `wx.mjs` accepts only the `0.8` release line, and an hour with no
+    weather code shows no sky (samaritano-hub PR #1).
+  - At `v0.10.0`: the Hub moves to the NWS functions. Its forecast horizon drops from
+    14 days (Open-Meteo) to about 6.5 days of hourly forecast.
+  - The Hub is personal and non-commercial, so its Open-Meteo use until then is within the
+    free API's terms.
+  - The Hub loads the package from a local checkout, not a tag pin. That is the Hub's own
+    recorded rule ("loaded where it sits, never copied here"). It checks the version line
+    instead, which is weaker than a tag pin.
