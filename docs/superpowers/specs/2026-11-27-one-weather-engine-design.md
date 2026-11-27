@@ -268,3 +268,13 @@ is the owner ruling that §2 requires.
   - **The Hub is to move at `v0.9.0`, not `v0.10.0`:** the Hub's move to the NWS functions is planned
     for `v0.9.0` (its own PR, after this tag; it has not happened, and its `wx.mjs` accepts only the `0.8` line today), "NWS, plus Open-Meteo beyond". Events past the NWS hourly range keep Open-Meteo until
     `v1.0.0`, and the Hub shows the Open-Meteo credit (owner: "Add a small credit").
+- **The Hub shows no Open-Meteo credit; it pins the tag** (owner, 2026-11-27, on the Hub's
+  credit rendering: "Drop the credit as this is my personal calendar"; earlier the same day:
+  "Pin the tag in Hub's package.json"). This entry supersedes, for the Hub only, "Add a small
+  credit" in the entry above, and the Hub's earlier "loaded where it sits" rule recorded in the
+  Hub entry before it.
+  - The Hub is one household's private page. It records each forecast's source but draws no
+    credit. The package rule that a consumer rendering Open-Meteo data shows a visible, linked
+    credit (README, CLAUDE.md §2) still stands for every other consumer.
+  - The Hub installs `github:astersports/aster-weather#v0.9.0` from its `package.json` and
+    refuses any version off the `0.9` line.
