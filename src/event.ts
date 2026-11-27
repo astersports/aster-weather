@@ -46,7 +46,8 @@ function nearestHour(hours: HourReading[], t: number): HourReading | null {
 
 /**
  * The forecast for an event starting at `eventStart` (an ISO string, epoch ms or
- * a Date), or `null` when the time is unusable (no request made), the point is
+ * a Date), or `null` when the time is unusable (no request made), the event is
+ * more than 7 days ahead or more than 1 day past (no request made), the point is
  * outside coverage, the forecast is unavailable, or no forecast hour is within
  * six hours of the start.
  */
@@ -57,6 +58,11 @@ export async function getEventWeather(
 ): Promise<EventReading | null> {
   const t = toMs(eventStart);
   if (!Number.isFinite(t)) return null;
+
+  // Out of range, no forecast hour can be within six hours of it: skip the request.
+  const nowMs = opts.now?.() ?? Date.now();
+  const daysAway = (t - nowMs) / 86_400_000;
+  if (daysAway > 7 || daysAway < -1) return null;
 
   let forecast;
   try {

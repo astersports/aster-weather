@@ -249,6 +249,36 @@ describe("getWeather: the one-call report", () => {
     expect(stored.data.condition).not.toBe(w.now!.condition);
   });
 
+  it("uses the venue's date for radar, not UTC's: 21:00 in New York on the 27th is still the 27th", async () => {
+    // 02:00 UTC on the 28th is 21:00 on the 27th in New York: the venue's "today" is the 27th.
+    const clock = Date.parse("2026-11-28T02:00:00Z");
+    const radarNow = structuredClone(claimingRadar());
+    // Shift every frame so the newest is one minute before this clock, and it stays green.
+    const newest = Math.max(...radarNow.catalogItems.features.map((f: any) => f.attributes.idp_validtime));
+    const shift = clock - 60_000 - newest;
+    for (const f of radarNow.catalogItems.features) f.attributes.idp_validtime += shift;
+
+    const dryRun = (await getWeather(C, {
+      fetchImpl: healthy({}, dryForecast(), radarNow).fetchImpl,
+      now: () => clock,
+      radar: false,
+    }))!;
+    resetCaches();
+    const wet = (await getWeather(C, {
+      fetchImpl: healthy({}, dryForecast(), radarNow).fetchImpl,
+      now: () => clock,
+    }))!;
+
+    const day = (w: typeof wet, date: string) => w.daily!.days.find((d) => d.date === date)!;
+    expect(wet.radar).not.toBeNull();
+    expect(day(dryRun, "2026-11-27").rainSource).toBeUndefined();
+    expect(isPrecipitation(day(dryRun, "2026-11-27").dayCondition)).toBe(false);
+    expect(day(wet, "2026-11-27").rainSource).toBe("radar");
+    expect(isPrecipitation(day(wet, "2026-11-27").dayCondition)).toBe(true);
+    expect(day(wet, "2026-11-28")).toEqual(day(dryRun, "2026-11-28"));
+    expect(day(wet, "2026-11-28").rainSource).toBeUndefined();
+  });
+
   it("localDay gives the venue's calendar date, and null for an unusable zone", () => {
     expect(localDay(NOW, "America/New_York")).toBe("2026-11-27");
     expect(localDay(NOW, "Not/AZone")).toBeNull();

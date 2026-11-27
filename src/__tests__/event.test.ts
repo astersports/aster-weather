@@ -62,11 +62,14 @@ function world(
 const run = (event: string | number | Date, w: ReturnType<typeof world>, now = NOW) =>
   getEventWeather(C, event, { fetchImpl: w.fetchImpl, now: () => now });
 
-beforeEach(() => {
+/** Every cache the event path reads, so each case starts cold and counts its own requests. */
+function clearAll() {
   clearPointCache();
   clearGridCache();
   clearHourlyCache();
-});
+}
+
+beforeEach(clearAll);
 
 describe("getEventWeather: the nearest hour", () => {
   it("reads the 13:00 EST hour for a 13:10 EST event", async () => {
@@ -106,6 +109,44 @@ describe("getEventWeather: the nearest hour", () => {
 
   it("returns null for an event nine days out, with no hour within six hours", async () => {
     expect(await run("2026-12-06T13:10:00-05:00", world())).toBeNull();
+  });
+
+  it("returns null with zero requests for an event more than 7 days ahead or more than 1 day past", async () => {
+    const DAY = 86_400_000;
+    for (const t of [NOW + 9 * DAY, NOW - 2 * DAY]) {
+      clearAll();
+      const w = world();
+      expect(await run(t, w)).toBeNull();
+      expect(w.calls).toHaveLength(0);
+    }
+  });
+
+  it("makes the request for an event exactly 7 days ahead or exactly 1 day past", async () => {
+    const DAY = 86_400_000;
+    for (const t of [NOW + 7 * DAY, NOW - 1 * DAY]) {
+      clearAll();
+      const w = world();
+      await run(t, w);
+      expect(w.calls.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("says so when it serves a stale forecast, and keeps the first fetch time", async () => {
+    const first = (await run(EVENT, world()))!;
+    expect(first.stamp.stale).toBe(false);
+
+    // Two hours on: past the one-hour fresh window, and the hourly request now fails every attempt.
+    const later = NOW + 2 * 3_600_000;
+    const failing = router({
+      [POINT_URL]: ok(points),
+      [GRID_URL]: ok(grid),
+      [HOURLY_URL]: { status: 500, body: {} },
+    });
+    const second = (await run(EVENT, failing, later))!;
+    expect(second).not.toBeNull();
+    expect(second.stamp.stale).toBe(true);
+    expect(second.stamp.fetchedAt).toBe(first.stamp.fetchedAt);
+    expect(second.hour.timestamp).toBe(first.hour.timestamp);
   });
 
   it("returns null for an unusable date without making a request", async () => {
