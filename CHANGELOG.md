@@ -7,6 +7,31 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.7.0 — 2026-11-27
+
+**Breaking** (shipped as a 0.x minor). A missing weather code is now unknown,
+never clear sky.
+
+### Breaking
+- **`weatherCode`, `icon` and `description` are `null` when Open-Meteo reports no
+  usable code.** This covers a missing, `null` or non-numeric code. Before, these
+  fell back to `0` and "Clear sky". A real `0` from Open-Meteo is unchanged: it is
+  still `0`, `"clear"` and "Clear sky".
+- **A number that is not a WMO code keeps its number** (`weatherCode: 4`), with
+  `icon: null` and `description: null`. It is no longer given a made-up icon.
+- Affects `HourlyForecast`, `CurrentWeather`, `DailyForecast`, `EventWeather` and
+  the `EventWeather.forecastStrip` entries.
+
+### Added
+- **`weatherInfoOrNull(code: number | null | undefined)`** (exported from the
+  package root). Returns the WMO entry, or `null` for a missing or non-WMO code.
+  `getWeatherInfo` is unchanged.
+
+### Migration
+- Guard on `icon !== null` before rendering `<WeatherIcon>` or `<SkyPanel>`.
+- Render `—` for a `null` `description`, never "Clear sky".
+- Treat a `null` `weatherCode` as unknown. Do not compare it with `0`.
+
 ## 0.6.0 — 2026-07-18
 
 **The "Sky" icon system.** A full replacement of the React SVG weather icons:
