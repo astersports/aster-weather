@@ -463,6 +463,15 @@ describe("peek — read the cache with no loader, no wait (B-015 held path)", ()
     expect(cache.peek("k", 5000, () => 2000)).toEqual({ data: 7, fetchedAt: 0, stale: true });
   });
 
+  it("an entry aged exactly maxStaleMs is stale:true with its original fetchedAt; one millisecond older is null", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 100);
+    // Age is exactly maxStaleMs (5000): still inside the bound.
+    expect(cache.peek("k", 5000, () => 5100)).toEqual({ data: 7, fetchedAt: 100, stale: true });
+    // One millisecond older: outside the bound, so null.
+    expect(cache.peek("k", 5000, () => 5101)).toBeNull();
+  });
+
   it("a freshFor shorter than the ttl makes the entry stale sooner", async () => {
     const cache = new WeatherCache<number>(TTL);
     const freshFor = () => 200;

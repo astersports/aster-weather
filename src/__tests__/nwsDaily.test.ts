@@ -437,6 +437,21 @@ describe("getDaily — a failed point lookup uses the forecast already in memory
     expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
   });
 
+  it("the held bound is 24 h, not 12: the in-memory forecast is served stale at 13 h and 23 h, and null at 25 h", async () => {
+    const warm = await warmAt(NOW);
+    const f = router({ [POINT_URL]: fail(500) });
+    // Each call is hours after the last, so the point hold has lapsed and the lookup asks (and fails) again.
+    for (const h of [13, 23]) {
+      const r = await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + h * HOUR });
+      expect(r).not.toBeNull();
+      expect(r!.stamp.stale).toBe(true);
+      expect(r!.stamp.fetchedAt).toBe(NOW);
+      expect(r!.days).toEqual(warm.days);
+    }
+    expect(await getDaily(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW + 25 * HOUR })).toBeNull();
+    expect(f.calls.every((u) => u === POINT_URL)).toBe(true);
+  });
+
   it("in memory and in the store, points 500: the in-memory forecast wins over an older stored copy", async () => {
     const store = memoryStore();
     const warm = await warmAt(NOW, store);

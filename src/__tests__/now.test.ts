@@ -485,4 +485,52 @@ describe("getNow — a failed point lookup uses the reading already in memory (B
     expect(stored!.temperature).toBe(warm.temperature);
     expect(sleeps).toEqual([]);
   });
+
+  it("a held call does not wait for another call's read: it settles null while the first read is still in flight, and the first still gets its reading", async () => {
+    // Cold cache, point ok. Call A's stations request is held open by a gate this test controls.
+    let releaseStations!: () => void;
+    const stationsGate = new Promise<void>((resolve) => (releaseStations = resolve));
+    let stationsAsked!: () => void;
+    const stationsStarted = new Promise<void>((resolve) => (stationsAsked = resolve));
+    const base = healthy();
+    const gated: FetchImpl = async (url, init) => {
+      if (url === STATIONS_URL) {
+        stationsAsked();
+        await stationsGate;
+      }
+      return base.fetchImpl(url, init);
+    };
+    const a = getNow(COORDS, { fetchImpl: gated, now: () => NOW });
+    await stationsStarted; // A's read is now in flight and unresolved.
+
+    // Call B: the point is evicted and its lookup fails, with no store. It must not join A's read.
+    evictPoint(COORDS);
+    const f = router({ [POINT_URL]: fail(500) });
+    const b = getNow(COORDS, { fetchImpl: f.fetchImpl, now: () => NOW });
+    // A real 200 ms timer, not a microtask flush: a fetch hop may use a macrotask, so a flush could
+    // end before B finishes. If B waited on A, B could never settle while A is gated, so the timer
+    // always wins and the test fails; a correct B settles in milliseconds, far inside the window.
+    const STILL = "still waiting";
+    let guardTimer: ReturnType<typeof setTimeout> | undefined;
+    const guard = new Promise<string>((resolve) => {
+      guardTimer = setTimeout(() => resolve(STILL), 200);
+    });
+    const first = await Promise.race([b, guard]);
+    clearTimeout(guardTimer);
+    expect(first, "B waited for A's in-flight read").toBeNull();
+
+    let aSettled = false;
+    void a.then(() => {
+      aSettled = true;
+    });
+    expect(aSettled, "A should still be pending while its stations request is gated").toBe(false);
+
+    releaseStations();
+    const ra = await a;
+    expect(ra).not.toBeNull();
+    expect(ra!.stamp.stale).toBe(false);
+    expect(ra!.stamp.fetchedAt).toBe(NOW);
+    expect(ra!.station?.id).toBe("KHPN");
+    expect(ra!.temperature).toBe(54);
+  });
 });
