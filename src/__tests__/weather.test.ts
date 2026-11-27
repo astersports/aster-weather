@@ -157,6 +157,7 @@ describe("getWeather: the one-call report", () => {
       onError: (err, ctx) => errors.push({ err, ctx }),
     }))!;
     expect(w.alerts).toBeNull();
+    expect(w.alertsReading).toBeNull();
     expect(w.now).not.toBeNull();
     expect(w.hourly).not.toBeNull();
     expect(w.daily).not.toBeNull();

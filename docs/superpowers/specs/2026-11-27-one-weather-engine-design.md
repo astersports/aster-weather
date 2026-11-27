@@ -2,7 +2,7 @@
 
 2026-11-27 · Status: **approved by the owner, with the mock-up, on 2026-11-27. Build plans:
 `docs/superpowers/plans/`. Released so far: `v0.7.0` and `v0.8.0`, both on 2026-11-27.
-`v0.9.0` onward is not built. Nothing later has shipped until its release is tagged.**
+`v0.9.0` (alert freshness, the clock-step fix, dev-dependency security) is built in its release PR; the later releases are not built. Nothing has shipped until its release is tagged. The release numbers were renumbered on 2026-11-27: see Decided.**
 
 Mock-up (real readings, one venue, both themes, every icon):
 https://claude.ai/artifact/RZnQHSqA3XWPxu3wyRxfub
@@ -195,7 +195,7 @@ identify unaltered NWS content. Severity maps to three visual levels.
 - **nova-select:** `server/weather.ts` moves to the package's NWS functions.
 - **aster-io:** the product mock uses the Sky icons and stops naming Open-Meteo.
 - **samaritano-hub** (added 2026-11-27, see Decided): `calendar/extras/wx.mjs` moves from the
-  Open-Meteo fetchers to the package's NWS functions once `v0.10.0` ships, before `v1.0.0`.
+  Open-Meteo fetchers to the package's NWS functions at `v0.9.0`, see Decided (2026-11-27, "v0.9.0 now, renumber the rest"); it was `v0.10.0` when written.
 
 Each project places the package's parts where its weather shows today, in its own PR,
 with a before-and-after capture. Each consumer's own weather rules change in the same
@@ -214,9 +214,10 @@ is the owner ruling that §2 requires.
 |---|---|---|
 | `v0.7.0` | Nullable weather code (released 2026-11-27) | Breaking |
 | `v0.8.0` | Engine: now, hourly with the grid, daily, alerts, radar, sun and moon, event function, provenance, store (released 2026-11-27) | Additive |
-| `v0.9.0` | Icons and glyphs | Breaking for exhaustive switches on the icon key |
-| `v0.10.0` | Page parts for everything in `v0.8.0` | Additive |
-| `v0.11.0` | UV, outlooks, heat stress, air quality, and their parts | Additive |
+| `v0.9.0` | Alert freshness (B-018), the clock-step fix (B-017), dev-dependency security (renumbered 2026-11-27, see Decided) | Additive |
+| `v0.10.0` | Icons and glyphs (was `v0.9.0`) | Breaking for exhaustive switches on the icon key |
+| `v0.11.0` | Page parts for everything in `v0.8.0` (was `v0.10.0`) | Additive |
+| `v0.12.0` | UV, outlooks, heat stress, air quality, and their parts (was `v0.11.0`) | Additive |
 | `v1.0.0` | Open-Meteo fetchers removed, after all four consumers migrate | Breaking |
 
 ## Left to the builder
@@ -235,7 +236,7 @@ is the owner ruling that §2 requires.
 3. **NWS rate limits** are undisclosed.
 4. **Alerts carry no fetch time** (`docs/BACKLOG.md` B-018). Goal 2 is met for station readings
    and forecasts, and not yet for alerts: a list served after a failed refresh is not marked
-   stale. Planned for `v0.9.0`, before any page part shows alerts.
+   stale. Fixed in `v0.9.0` (`getAlertsReading`), before any page part shows alerts.
 
 ## Decided
 
@@ -256,3 +257,14 @@ is the owner ruling that §2 requires.
   - The Hub loads the package from a local checkout, not a tag pin. That is the Hub's own
     recorded rule ("loaded where it sits, never copied here"). It checks the version line
     instead, which is weaker than a tag pin.
+- **Library, production-ready; v0.9.0 now, renumber the rest** (owner, 2026-11-27: "Library,
+  production-ready"; "v0.9.0 now, renumber the rest"). This entry supersedes the earlier entries
+  and the release numbers elsewhere in this document where they differ. The new release table:
+  - `v0.9.0`: alert freshness (B-018), the clock-step fix (B-017), dev-dependency security. Additive.
+  - `v0.10.0`: icons and glyphs (was `v0.9.0`).
+  - `v0.11.0`: page parts (was `v0.10.0`).
+  - `v0.12.0`: UV, outlooks, heat stress, air quality (was `v0.11.0`).
+  - `v1.0.0`: unchanged.
+  - **The Hub moves at `v0.9.0`, not `v0.10.0`:** the Hub's move to the NWS functions is now at
+    `v0.9.0`, "NWS, plus Open-Meteo beyond". Events past the NWS hourly range keep Open-Meteo until
+    `v1.0.0`, and the Hub shows the Open-Meteo credit (owner: "Add a small credit").

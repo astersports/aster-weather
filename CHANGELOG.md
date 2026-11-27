@@ -7,6 +7,28 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.9.0 — 2026-11-27
+
+**Additive.** Alert lists now say when they were fetched and whether they are stale, and a clock that steps back no longer keeps a cached reading fresh. The only runtime change in `dist/` is those two fixes; dev dependencies are updated.
+
+### Added
+- **`getAlertsReading(coords, opts)`** returns `AlertsReading | null`: `alerts`, `fetchedAt` (epoch ms, when the list was fetched) and `stale` (`true` when a refresh failed and this is the earlier list, still inside `ALERT_MAX_STALE_MS`). `null` means outside coverage, or the alerts request failed with no list young enough to serve.
+- **`AlertsReading`**, the type of that result.
+- **`WeatherReport.alertsReading: AlertsReading | null`**, beside `alerts`, which keeps its shape. `getAlerts` keeps its shape too, and its `onError` label is still `getAlerts`.
+
+### Fixed
+- **B-018:** a list served after a failed refresh is no longer indistinguishable from a fresh one; read `stale` from `getAlertsReading` or `WeatherReport.alertsReading`.
+- **B-017:** a cached reading whose fetch time is ahead of the clock is never fresh. After a clock step back it is fetched again; if that fetch fails it is served only as `stale: true`.
+
+### Security (dev dependencies)
+- `happy-dom` ^21.0.4, `vitest` ^5.1.2, and `vite` held at ^8.3.3 through `pnpm.overrides` (resolves to 8.4.0). This closes nine Dependabot alerts. They are dev dependencies only; the package has no runtime dependencies, and `dist/` does not change because of them.
+
+### Not in this release
+- Icons for the newer conditions and measurement glyphs (`v0.10.0`).
+- Page parts (`v0.11.0`).
+- UV index, outlooks, heat stress and air quality (`v0.12.0`).
+- These were `v0.9.0`, `v0.10.0` and `v0.11.0` in the `0.8.0` entry below; the owner renumbered them on 2026-11-27, so alert freshness, the clock-step fix and the dependency security work could ship first.
+
 ## 0.8.0 — 2026-11-27
 
 **Additive, with one type-level change that can break a build** (`WeatherCall`, below). This release adds the NWS and NOAA engine: official US weather, with a stamp on every station

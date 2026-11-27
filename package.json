@@ -1,6 +1,6 @@
 {
   "name": "@aster/weather",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Official US weather for Aster projects: National Weather Service forecasts, station readings, alerts and NOAA radar, with provenance on station readings and forecasts, plus React SVG weather icons. The Open-Meteo fetchers are deprecated.",
   "license": "MIT",
   "type": "module",

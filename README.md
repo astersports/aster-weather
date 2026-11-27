@@ -73,11 +73,12 @@ outside US coverage. Each part of the report (`now`, `hourly`, `daily`, `alerts`
 
 | Function | Returns | `null` when |
 |---|---|---|
-| `getWeather(coords, opts?)` | `WeatherReport`: `place`, `now`, `hourly`, `daily`, `alerts`, `radar`, `sun`, `moon`, `fetchedAt` | The point is invalid or outside coverage. Any other part is `null` alone when it cannot be answered. |
+| `getWeather(coords, opts?)` | `WeatherReport`: `place`, `now`, `hourly`, `daily`, `alerts`, `alertsReading`, `radar`, `sun`, `moon`, `fetchedAt` | The point is invalid or outside coverage. Any other part is `null` alone when it cannot be answered. |
 | `getNow(coords, opts?)` | `NowReading`: one current reading, `stamp.kind` `observed` or `forecast` | Outside coverage, or no usable reading (section 7). |
 | `getHourly(coords, opts?)` | `HourlyResult`: `hours`, `rain`, `snow`, `ice` amounts, `gridAvailable` | Outside coverage, or no usable forecast (section 6). |
 | `getDaily(coords, opts?)` | `DailyResult`: `days`, one entry per date | Outside coverage, or no usable forecast. |
 | `getAlerts(coords, opts?)` | `WeatherAlert[]`. An empty list means no alert is active. | Outside coverage, or the alerts request failed with no list young enough to serve (section 10). |
+| `getAlertsReading(coords, opts?)` | `AlertsReading`: `alerts` (as `getAlerts`), `fetchedAt`, `stale` | The same cases as `getAlerts`. |
 | `getRadarRain(coords, opts?)` | `RadarRain`: `rainingNow`, `recentRain`, `intensity`, `latestFrameAt`, `checkedAt`, `bridgeFrames` | Invalid coordinates, the radar could not answer, or no frame is inside `MAX_FRAME_AGE_MS`. `null` means unknown, never dry. |
 | `getSun(coords, opts?)` | `SunTimes`: `sunrise`, `sunset`, `firstLight`, `lastLight`, `dayLengthMs` | Outside coverage, the point lookup failed, or there is no sun data for the venue's current date. |
 | `getMoon(at)` | `MoonPhase`: `fraction`, `illumination`, `name` | `at` is not a finite time. Makes no request. |
@@ -95,11 +96,10 @@ Station readings, forecasts and the event reading carry a `Stamp`:
 | `stale` | `true` whenever the reading is served past its freshness window, from memory or from the store. |
 | `source` | `nws-station` or `nws-forecast`. |
 
-Alerts, sun times, the moon and the radar carry no `Stamp`. An alert is dated by its own `onset` and
+Alerts, sun times, the moon and the radar carry no `Stamp`. An alert list carries its own pair: `getAlertsReading` and `WeatherReport.alertsReading` return `fetchedAt` and `stale` beside the list (section 10). An alert is dated by its own `onset` and
 `ends` times. `SunTimes` is dated by its `sunrise` and `sunset`. `MoonPhase` is dated by the time you
 pass to `getMoon(at)`. A radar answer is dated by `checkedAt` (the fetch that produced it) and by its
-frame times, `latestFrameAt` and `bridgeFrames` (section 9). An alert list does not say when it was
-fetched, or whether it is a copy served after a failed refresh (see Known limits).
+frame times, `latestFrameAt` and `bridgeFrames` (section 9). `getAlerts` and `WeatherReport.alerts` return the list alone; to know when it was fetched, or whether it is a copy served after a failed refresh, use `getAlertsReading` or `WeatherReport.alertsReading`.
 
 Label a reading by its `kind`:
 
@@ -221,6 +221,12 @@ always stale. Only an observed reading is written to the store.
   reached. An alert with no end time stays until NWS stops sending it.
 - **Cache.** The list is fresh for `FRESH_MS.alerts` (5 min). When a refresh fails, the last list
   is served for up to `ALERT_MAX_STALE_MS` (60 min).
+- **When it was fetched.** `getAlertsReading` returns `{ alerts, fetchedAt, stale }`. `fetchedAt` is
+  when the list was fetched (epoch ms), not the time of the call. `stale` is `true` when a refresh
+  failed and this is the earlier list, still inside `ALERT_MAX_STALE_MS`; `onError` reports the
+  failed refresh. `WeatherReport.alertsReading` is the same value, or `null` when the list could
+  not be answered; `WeatherReport.alerts` is its `alerts`, unchanged in shape. `getAlerts` returns
+  the list alone. An alert still stops at its `ends` time in a stale list.
 
 ## 11. Sun and moon
 
@@ -343,7 +349,7 @@ holds at most 200 keys, dropping the least recently used.
 **The Sky icons draw 14 values only:** `clear`, `mostly-clear`, `partly-cloudy`, `overcast`, `fog`,
 `drizzle`, `light-rain`, `rain`, `freezing-rain`, `heavy-rain`, `light-snow`, `snow`, `heavy-snow`
 and `thunderstorm`. Night art is chosen by `isDay`. A condition outside those 14 has no icon until
-`v0.9.0`, so render its label instead: `mostly-cloudy`, `wintry-mix`, `sleet`, `blizzard`, `haze`,
+`v0.10.0`, so render its label instead: `mostly-cloudy`, `wintry-mix`, `sleet`, `blizzard`, `haze`,
 `smoke`, `dust`, `hot`, `cold`, `tornado` and `tropical-storm`.
 
 ## Icons (`@aster/weather/icons`) — React · the **Sky** system (v0.6.0)
@@ -392,10 +398,10 @@ const icon = getWeatherInfo(code).icon; // WeatherIconKey
 
 Still to come, with no dates:
 
-- **Icons** for the conditions above, and measurement glyphs: `v0.9.0`.
-- **Page parts** (`@aster/weather/ui`) for everything in `v0.8.0`: `v0.10.0`.
+- **Icons** for the conditions above, and measurement glyphs: `v0.10.0`.
+- **Page parts** (`@aster/weather/ui`) for everything in `v0.8.0`: `v0.11.0`.
 - **UV index, forecaster outlooks** (tropical storms, severe-storm and hazard outlooks) **and air
-  quality** (which needs an account key on a server), with their parts: `v0.11.0`.
+  quality** (which needs an account key on a server), with their parts: `v0.12.0`.
 
 Not planned:
 
@@ -410,13 +416,9 @@ Not planned:
 - **Radar from a browser** is unverified (section 9).
 - **NWS rate limits** are not disclosed, so the package cannot say how many requests a venue can
   make. The NWS disclaimer says it may block an address or a type of query that affects its service, so send a `userAgent` from a server and keep the caches in place.
-- **Clock steps back (B-017, open).** A cache entry stays fresh while `now - fetchedAt` is below its
-  limit. If the clock steps back, an entry can be served as fresh for longer than its limit, by the
-  size of the step. The backlog plans this as a `v0.8.x` patch.
 - **Station observations (B-014, accepted).** A station observation that fails once is not asked
   again within the same load. The next load asks again. A retry was not added, because it would
   double the wait each time a station hangs.
-- **Alerts carry no fetch time (B-018, open).** A list served after a failed refresh, for up to `ALERT_MAX_STALE_MS` (60 min), is not marked as stale, so a caller cannot tell it from a fresh list. `onError` does report the failed refresh. Planned for `v0.9.0`.
 
 ## 18. Sources and terms
 
@@ -517,9 +519,10 @@ additive · **patch** = behaviour-preserving fix. On 0.x a break ships as a mino
 |---|---|---|
 | `v0.7.0` | The nullable weather code. | Breaking (shipped) |
 | `v0.8.0` | The NWS and NOAA engine: current, hourly with the grid, seven-day, alerts, radar, sun and moon, the event function, provenance and the store. | Additive |
-| `v0.9.0` | Icons and glyphs for the newer conditions and measurements. | Breaking for an exhaustive switch on the icon key |
-| `v0.10.0` | Page parts for everything in `v0.8.0`. | Additive |
-| `v0.11.0` | UV index, outlooks, air quality, and their parts. The design doc also lists heat stress here; the hourly heat-stress field is already in `v0.8.0`. | Additive |
+| `v0.9.0` | Alert freshness (`getAlertsReading`, B-018), the clock-step fix (B-017), and dev-dependency security. | Additive |
+| `v0.10.0` | Icons and glyphs for the newer conditions and measurements. | Breaking for an exhaustive switch on the icon key |
+| `v0.11.0` | Page parts for everything in `v0.8.0`. | Additive |
+| `v0.12.0` | UV index, outlooks, air quality, and their parts. The design doc also lists heat stress here; the hourly heat-stress field is already in `v0.8.0`. | Additive |
 | `v1.0.0` | Open-Meteo fetchers removed, after the consumers move. | Breaking |
 
 A **minor or major tag is held** until the merge commit carries `[release-approved]`

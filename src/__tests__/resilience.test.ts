@@ -566,6 +566,7 @@ describe("B-017: a clock that stepped back", () => {
     expect(cache.peek("k", Infinity, () => T - HOUR)).toEqual({ data: 7, fetchedAt: T, stale: true });
   });
 
+  // Paired with the control below: that one proves get() honours the injected clock; this one proves a fetch time ahead of it is not fresh.
   it("get with the injected clock an hour before the fetch calls the loader", async () => {
     const cache = await seeded();
     let calls = 0;
