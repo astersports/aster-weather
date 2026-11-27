@@ -78,6 +78,10 @@ async function loadHourly(coords, opts = {}) {
  * Fetch the multi-day hourly forecast for a coordinate. Cached for 60 min per
  * rounded coordinate, with in-flight dedup. Returns `[]` on failure (never
  * throws, never fabricates) — falls back to stale cache when available.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getHourly` (the NWS hourly forecast). Removed in `v1.0.0`, after the
+ * consumers move. Its behaviour is unchanged.
  */
 export async function fetchForecast(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
@@ -127,6 +131,10 @@ function stripLabel(timestamp, utcOffsetSeconds) {
  * or the nearest hour is >6h away. From St. Patrick `getWeatherForEvent`.
  * Warning flags treat a `null` reading as "unknown" — they never fire off a
  * fabricated value (WX-P1-1).
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getEventWeather` (the NWS forecast hour nearest the event). Removed in
+ * `v1.0.0`, after the consumers move. Its behaviour is unchanged.
  */
 export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))

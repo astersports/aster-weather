@@ -1,6 +1,6 @@
 /**
  * Current conditions. The ladder, in order:
- *   1. Observed: the first two stations, nearest first; the first reading with
+ *   1. Observed: the first two stations, in the order NWS gives; the first reading with
  *      a temperature and no more than 90 minutes old wins.
  *   2. Forecast: the official hourly forecast hour containing `now`.
  *   3. Otherwise no reading. The loader throws, so the cache serves stale or

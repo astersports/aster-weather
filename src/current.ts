@@ -72,6 +72,13 @@ interface OpenMeteoCurrent {
   daily?: { sunrise?: string[]; sunset?: string[] };
 }
 
+/**
+ * Current conditions from Open-Meteo, or `null` on failure.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getNow` (a measured station reading, or the forecast hour now). Removed in
+ * `v1.0.0`, after the consumers move. Its behaviour is unchanged.
+ */
 export async function getCurrentWeather(
   coords: Coords,
   opts: FetchOptions = {},

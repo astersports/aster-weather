@@ -21,8 +21,9 @@ export declare const ALERT_MAX_STALE_MS: number;
 /**
  * Active official alerts for a point, highest level first, then earliest onset
  * (a null onset last). `[]` means none are active. `null` means outside NWS
- * coverage, or the lookup failed with no list young enough to serve. A failed
- * point lookup does not stop the alerts request: it needs only the coordinates.
+ * coverage (invalid or 404 point), or the alerts request failed with no list
+ * young enough to serve. A failed point lookup does not stop the alerts request:
+ * it needs only the coordinates.
  * Never throws; `onError` fires once per ultimately-failed alerts fetch.
  */
 export declare function getAlerts(coords: Coords, opts?: EngineOptions): Promise<WeatherAlert[] | null>;

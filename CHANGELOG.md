@@ -7,6 +7,57 @@ never a branch or a bare SHA, so every consumer resolves deterministically.
 SemVer: **major** = shape / icon-key / behavior break (coordinate a consumer
 bump); **minor** = additive; **patch** = behavior-preserving fix.
 
+## 0.8.0 — 2026-11-27
+
+**Additive, with one type-level change that can break a build** (`WeatherCall`, below). This release adds the NWS and NOAA engine: official US weather, with a stamp on every station
+reading and forecast. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
+
+### Added
+- **Engine functions:** `getWeather` (every part in one report), `getNow`, `getHourly`, `getDaily`,
+  `getAlerts`, `getRadarRain`, `getSun`, `getMoon`, `getEventWeather`, and `clearWeatherCaches` to
+  clear every engine cache and hold.
+- **Provenance:** station readings, forecasts and the event reading carry a `Stamp` (`kind`, `at`, `fetchedAt`, `stale`,
+  `source`). The age bounds and retry waits are exported as constants: `MAX_AGE_MS`, `FRESH_MS`,
+  `MAX_OBSERVATION_AGE_MS`, `ALERT_MAX_STALE_MS`, `MAX_FRAME_AGE_MS`, `RADAR_TIMEOUT_MS`,
+  `RADAR_RETRY_AFTER_MS`, `GRID_RETRY_AFTER_MS`, `SUN_REFRESH_AFTER_MS` and `POINT_RETRY_AFTER_MS`.
+- **Options:** `userAgent`, `store`, `now` and `radar` on the engine, with `fetchImpl`, `timeoutMs`
+  and `onError` as before.
+- **Store:** the `WeatherStore` interface, for last-good readings a consumer keeps between loads.
+- **Conditions:** `conditionFromNwsIcon`, `conditionLabel`, `isPrecipitation` and `NWS_ICON_CONDITION`.
+  The `Condition` type has 25 values.
+- **Types:** `WeatherReport`, `NowReading`, `HourlyResult`, `HourReading`, `AmountBlock`,
+  `DailyResult`, `DayReading`, `WeatherAlert`, `RadarRain`, `RadarFrame`, `EchoIntensity`,
+  `SunTimes`, `MoonPhase`, `EventReading`, `ReadingKind`, `Stamp`, `EngineOptions`, `NwsIconReading`.
+
+### Changed
+- A throwing `onError` hook no longer rejects a fetch, and a rejecting one no longer causes an
+  unhandled rejection. This holds for every fetcher, old or new. (Backlog B-001.)
+- **`FetchImpl`'s `init` argument can now carry `headers`** (`init?: { signal?; headers? }`). The NWS and
+  NOAA engine sends `Accept: application/geo+json` on every request, and a `User-Agent` when you set
+  `userAgent`. The Open-Meteo fetchers send no headers.
+
+### Deprecated
+- `fetchForecast`, `getCurrentWeather`, `getDailyForecast`, `getNowcast` and `getWeatherForEvent`.
+  Use `getHourly`, `getNow`, `getDaily`, `getRadarRain` and `getEventWeather`. `getRadarRain` does not
+  replace `getNowcast` like for like. They are removed in `v1.0.0`, after the consumers move.
+
+### Can break a build
+- **`WeatherCall` gained nine labels since `v0.7.0`:** `getPoint`, `getHourly`, `getGrid`, `getDaily`,
+  `getNow`, `getAlerts`, `getRadarRain`, `getStations` and `getLatestObservation`. An exhaustive
+  `switch` over `WeatherCall` needs a case for each.
+
+### Not in this release
+- Page parts (`v0.10.0`), icons for the newer conditions and measurement glyphs (`v0.9.0`).
+- UV index, outlooks and air quality (`v0.11.0`).
+
+### Known limits
+- Radar from a browser is unverified: whether NOAA's service answers a browser's cross-origin request
+  has not been checked.
+- NWS rate limits are not disclosed.
+- B-014 (accepted): a station observation that fails once is not asked again within the same load.
+- B-017 (open): if the clock steps back, a cache entry can stay fresh past its limit.
+- B-018 (open): an alert list carries no fetch time, so a list served after a failed refresh is not marked stale.
+
 ## 0.7.0 — 2026-11-27
 
 **Breaking** (shipped as a 0.x minor). A missing weather code is now unknown,

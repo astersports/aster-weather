@@ -22,7 +22,7 @@ export interface Observation {
     icon: string | null;
 }
 /**
- * The observation stations for a coordinate, nearest first, or `null` when the
+ * The observation stations for a coordinate, in the order NWS gives, or `null` when the
  * point is outside coverage or the list could not be read. Never throws. A list
  * that ultimately fails (after the cache's retry) is reported once through
  * `onError` as `getStations`.

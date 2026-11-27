@@ -1,6 +1,6 @@
 /**
  * Observation stations and the latest station observation. The station list
- * is cached per point (nearest first); an observation is not cached here, the
+ * is cached per point, in the order NWS gives; an observation is not cached here, the
  * caller (`getNow`) decides how old a reading may be. A 404 is `null`; other
  * failures throw, and the caller catches.
  */
@@ -72,7 +72,7 @@ function parseStations(body: unknown): Station[] {
 }
 
 /**
- * The observation stations for a coordinate, nearest first, or `null` when the
+ * The observation stations for a coordinate, in the order NWS gives, or `null` when the
  * point is outside coverage or the list could not be read. Never throws. A list
  * that ultimately fails (after the cache's retry) is reported once through
  * `onError` as `getStations`.

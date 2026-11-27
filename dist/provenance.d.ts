@@ -6,16 +6,23 @@ import type { FetchOptions } from "./types.js";
 import type { WeatherStore } from "./store.js";
 /** `observed` = a station measurement; `forecast` = the official model forecast. */
 export type ReadingKind = "observed" | "forecast";
-/** What every engine reading carries so a consumer can label it. */
+/** What a station reading, a forecast or an event reading carries, so a consumer can label it. */
 export interface Stamp {
     kind: ReadingKind;
-    /** Epoch ms the reading is for (observation or forecast hour). */
+    /**
+     * Epoch ms. For a current reading: the observation time, or the start of the
+     * forecast hour. For an hourly or daily result, and the event reading built on
+     * one: the time NWS issued the forecast, or the time it was read when NWS gives none.
+     */
     at: number;
     /** Epoch ms the engine fetched it. */
     fetchedAt: number;
-    /** True when served from the last-good store past its freshness window. */
+    /**
+     * True whenever the reading is served past its freshness window, whether it
+     * comes from memory or from the last-good store. A reading inside its window is false.
+     */
     stale: boolean;
-    source: "nws-station" | "nws-forecast" | "noaa-radar";
+    source: "nws-station" | "nws-forecast";
 }
 /** Longest a reading may be served at all, per kind of reading. */
 export declare const MAX_AGE_MS: {
@@ -38,6 +45,10 @@ export interface EngineOptions extends FetchOptions {
     userAgent?: string;
     store?: WeatherStore;
     now?: () => number;
+    /**
+     * `getNow` and `getDaily` ask the radar only when this is `true` (default off).
+     * `getWeather` asks it unless this is `false`.
+     */
     radar?: boolean;
 }
 //# sourceMappingURL=provenance.d.ts.map
