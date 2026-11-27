@@ -161,13 +161,14 @@ export interface DailyForecast {
  */
 export type FetchImpl = (url: string, init?: {
     signal?: AbortSignal;
+    headers?: Record<string, string>;
 }) => Promise<{
     ok: boolean;
     status: number;
     json: () => Promise<unknown>;
 }>;
 /** Which loader an {@link WeatherErrorContext} came from. */
-export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast";
+export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast" | "getPoint" | "getHourly" | "getGrid" | "getDaily" | "getNow" | "getAlerts" | "getRadarRain";
 /**
  * Context passed to {@link FetchOptions.onError} so a consumer can tag the
  * failure by call + venue when routing it into its own tracker.

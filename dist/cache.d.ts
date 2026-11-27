@@ -69,6 +69,8 @@ export declare class WeatherCache<T> {
      */
     private backgroundRefresh;
     private set;
+    /** Remove one key from the store, the in-flight map and the refreshing set. */
+    delete(key: string): void;
     /** Clear the cache + any in-flight jobs (test hook / consumer sign-out hygiene). */
     clear(): void;
 }
