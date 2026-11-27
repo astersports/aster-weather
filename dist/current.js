@@ -7,7 +7,7 @@
  */
 import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, localIsoToEpoch, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
-import { getWeatherInfo } from "./wmo.js";
+import { weatherInfoOrNull } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
 const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
@@ -35,6 +35,13 @@ function buildUrl(lat, lon) {
     });
     return `${API_BASE}?${params.toString()}`;
 }
+/**
+ * Current conditions from Open-Meteo, or `null` on failure.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getNow` (a measured station reading, or the forecast hour now). Removed in
+ * `v1.0.0`, after the consumers move. Its behaviour is unchanged.
+ */
 export async function getCurrentWeather(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
         return null;
@@ -45,13 +52,14 @@ export async function getCurrentWeather(coords, opts = {}) {
             throw new Error("current shape");
         }
         const c = data.current;
-        const info = getWeatherInfo(c.weather_code ?? 0);
+        const code = typeof c.weather_code === "number" ? numOrNull(c.weather_code) : null;
+        const info = weatherInfoOrNull(code);
         const result = {
             temperature: roundOrNull(c.temperature_2m),
             feelsLike: roundOrNull(c.apparent_temperature),
-            weatherCode: c.weather_code ?? 0,
-            description: info.description,
-            icon: info.icon,
+            weatherCode: code,
+            description: info?.description ?? null,
+            icon: info?.icon ?? null,
             windSpeed: roundOrNull(c.wind_speed_10m),
             windGusts: roundOrNull(c.wind_gusts_10m),
             windDirection: roundOrNull(c.wind_direction_10m),

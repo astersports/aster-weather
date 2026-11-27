@@ -7,7 +7,7 @@
 import { FORECAST_DAYS, } from "./types.js";
 import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, numOrNull, parseOpenMeteoLocalTime, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
-import { getWeatherInfo } from "./wmo.js";
+import { weatherInfoOrNull } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
 const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
@@ -32,6 +32,13 @@ function buildUrl(lat, lon) {
     });
     return `${API_BASE}?${params.toString()}`;
 }
+/**
+ * The Open-Meteo daily forecast, or `[]` on failure.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getDaily` (the NWS seven-day forecast). Removed in `v1.0.0`, after the
+ * consumers move. Its behaviour is unchanged.
+ */
 export async function getDailyForecast(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
         return [];
@@ -43,8 +50,9 @@ export async function getDailyForecast(coords, opts = {}) {
             throw new Error("daily shape");
         }
         const forecasts = d.time.map((date, i) => {
-            const weatherCode = d.weather_code?.[i] ?? 0;
-            const info = getWeatherInfo(weatherCode);
+            const raw = d.weather_code?.[i];
+            const weatherCode = typeof raw === "number" ? numOrNull(raw) : null;
+            const info = weatherInfoOrNull(weatherCode);
             return {
                 date,
                 high: roundOrNull(d.temperature_2m_max?.[i]),
@@ -53,8 +61,8 @@ export async function getDailyForecast(coords, opts = {}) {
                 windSpeedMax: roundOrNull(d.wind_speed_10m_max?.[i]),
                 uvIndexMax: numOrNull(d.uv_index_max?.[i]),
                 weatherCode,
-                icon: info.icon,
-                description: info.description,
+                icon: info?.icon ?? null,
+                description: info?.description ?? null,
                 sunrise: d.sunrise?.[i] ? parseOpenMeteoLocalTime(d.sunrise[i]) : "",
                 sunset: d.sunset?.[i] ? parseOpenMeteoLocalTime(d.sunset[i]) : "",
             };

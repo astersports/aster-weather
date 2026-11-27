@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { WeatherCache } from "../cache.js";
 import {
   fetchForecast,
   getWeatherForEvent,
@@ -214,5 +215,306 @@ describe("WX-P2-20 — venue-local strip label uses the UTC offset (DL-13 lock)"
     expect(ew).not.toBeNull();
     // Dropping the utc_offset term would read UTC hour 22 → "Night".
     expect(ew!.forecastStrip[0].label).toBe("Evening");
+  });
+});
+
+describe("v0.8.0 Task 3 — getWithMeta: age-bounded stale readings", () => {
+  const TTL = 1000;
+
+  it("(a) a fresh entry is returned with stale:false and the loader runs once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return 1;
+    };
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const second = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 500);
+    expect(first).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(second).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+  });
+
+  it("(b) loader fails with an entry younger than maxStaleMs: that entry, stale:true, timestamp unchanged, onError once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      5000,
+      () => 2000, // expired by TTL, age 2000 <= 5000
+    );
+    expect(meta).toEqual({ data: 1, fetchedAt: 0, stale: true });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("(c) loader fails with an entry older than maxStaleMs: empty, stale:false, the entry is dropped so the next call runs the loader", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    const onError = vi.fn();
+    const failed = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      1000,
+      () => 2000, // age 2000 > 1000
+    );
+    expect(failed).toEqual({ data: -1, fetchedAt: 2000, stale: false });
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    let runs = 0;
+    const next = await cache.getWithMeta(
+      "k",
+      async () => {
+        runs += 1;
+        return 9;
+      },
+      -1,
+      undefined,
+      1000,
+      () => 2100,
+    );
+    expect(runs).toBe(1); // the old entry is gone, so the loader ran
+    expect(next).toEqual({ data: 9, fetchedAt: 2100, stale: false });
+  });
+
+  it("(d) loader fails with no entry: empty, stale:false, onError once", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      Infinity,
+      () => 300,
+    );
+    expect(meta).toEqual({ data: -1, fetchedAt: 300, stale: false });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("(e) two concurrent calls on a cold key share one loader run", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const loader = async () => {
+      runs += 1;
+      await gate;
+      return 4;
+    };
+    const p1 = cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const p2 = cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    release();
+    const [a, b] = await Promise.all([p1, p2]);
+    expect(runs).toBe(1);
+    expect(a).toEqual(b);
+    expect(a).toEqual({ data: 4, fetchedAt: 0, stale: false });
+  });
+
+  it("(f) an expired entry is not returned while the loader succeeds: the fresh value comes back", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 1, -1, undefined, Infinity, () => 0);
+    let runs = 0;
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        runs += 1;
+        return 2;
+      },
+      -1,
+      undefined,
+      Infinity,
+      () => 5000, // expired
+    );
+    expect(runs).toBe(1);
+    expect(meta).toEqual({ data: 2, fetchedAt: 5000, stale: false });
+  });
+});
+
+describe("B-003 — getWithMeta freshFor: a value can shorten its own freshness", () => {
+  const TTL = 1000;
+
+  it("reuses an entry inside the shorter freshFor time and reloads it after", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const freshFor = () => 200;
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, freshFor);
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 199, freshFor);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+    const after = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 200, freshFor);
+    expect(first.data).toBe(1);
+    expect(after).toEqual({ data: 2, fetchedAt: 200, stale: false });
+    expect(runs).toBe(2);
+  });
+
+  it("a freshFor longer than the cache's ttl does not outlive the ttl", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const freshFor = () => 10 * TTL;
+    await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, freshFor);
+    const expired = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL, freshFor);
+    expect(expired).toEqual({ data: 2, fetchedAt: TTL, stale: false });
+    expect(runs).toBe(2);
+  });
+
+  it("without freshFor the cache's own ttl decides, as before", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0);
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL - 1);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+  });
+
+  it("a failed reload past the shorter freshFor serves the entry as stale, with its original fetchedAt", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0, () => 200);
+    const onError = vi.fn();
+    const meta = await cache.getWithMeta(
+      "k",
+      async () => {
+        throw new Error("down");
+      },
+      -1,
+      onError,
+      5000,
+      () => 300,
+      () => 200,
+    );
+    expect(meta).toEqual({ data: 7, fetchedAt: 0, stale: true });
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the engine never throws: a freshFor that throws falls back to the cache's ttl", () => {
+  const TTL = 1000;
+
+  it("getWithMeta resolves, and the entry is fresh for the cache's own ttl", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const throwing = (): number => {
+      throw new Error("boom");
+    };
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, throwing);
+    expect(first).toEqual({ data: 1, fetchedAt: 0, stale: false });
+
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL - 1, throwing);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+
+    const after = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL, throwing);
+    expect(after).toEqual({ data: 2, fetchedAt: TTL, stale: false });
+    expect(runs).toBe(2);
+  });
+});
+
+describe("peek — read the cache with no loader, no wait (B-015 held path)", () => {
+  const TTL = 1000;
+
+  it("an absent key is null", () => {
+    const cache = new WeatherCache<number>(TTL);
+    expect(cache.peek("k", Infinity, () => 0)).toBeNull();
+  });
+
+  it("a fresh entry is returned with stale:false and its original fetchedAt", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 100);
+    expect(cache.peek("k", Infinity, () => 500)).toEqual({ data: 7, fetchedAt: 100, stale: false });
+  });
+
+  it("past the ttl but inside maxStaleMs: stale:true with the original fetchedAt", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 100);
+    expect(cache.peek("k", 5000, () => 100 + TTL)).toEqual({ data: 7, fetchedAt: 100, stale: true });
+  });
+
+  it("older than maxStaleMs is null, and the entry is kept (a later peek with a larger bound still finds it)", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0);
+    expect(cache.peek("k", 100, () => 2000)).toBeNull();
+    expect(cache.peek("k", 5000, () => 2000)).toEqual({ data: 7, fetchedAt: 0, stale: true });
+  });
+
+  it("an entry aged exactly maxStaleMs is stale:true with its original fetchedAt; one millisecond older is null", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 100);
+    // Age is exactly maxStaleMs (5000): still inside the bound.
+    expect(cache.peek("k", 5000, () => 5100)).toEqual({ data: 7, fetchedAt: 100, stale: true });
+    // One millisecond older: outside the bound, so null.
+    expect(cache.peek("k", 5000, () => 5101)).toBeNull();
+  });
+
+  it("a freshFor shorter than the ttl makes the entry stale sooner", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    const freshFor = () => 200;
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0, freshFor);
+    expect(cache.peek("k", 5000, () => 199, freshFor)).toEqual({ data: 7, fetchedAt: 0, stale: false });
+    expect(cache.peek("k", 5000, () => 200, freshFor)).toEqual({ data: 7, fetchedAt: 0, stale: true });
+    // Without freshFor the ttl decides again.
+    expect(cache.peek("k", 5000, () => 200)).toEqual({ data: 7, fetchedAt: 0, stale: false });
+  });
+
+  it("a freshFor that throws falls back to the cache's ttl and does not throw", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0);
+    const throwing = (): number => {
+      throw new Error("boom");
+    };
+    expect(cache.peek("k", 5000, () => TTL - 1, throwing)).toEqual({ data: 7, fetchedAt: 0, stale: false });
+    expect(cache.peek("k", 5000, () => TTL, throwing)).toEqual({ data: 7, fetchedAt: 0, stale: true });
+  });
+
+  it("never waits and never retries: a recording sleep on a retrying cache is never called", async () => {
+    const sleeps: number[] = [];
+    const cache = new WeatherCache<number>(TTL, 200, {
+      retries: 2,
+      retryBackoffMs: 500,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    await cache.getWithMeta("k", async () => 7, -1, undefined, Infinity, () => 0);
+    expect(cache.peek("k", 5000, () => 2 * TTL)).toEqual({ data: 7, fetchedAt: 0, stale: true });
+    expect(cache.peek("missing", 5000, () => 0)).toBeNull();
+    expect(sleeps).toEqual([]);
+  });
+
+  it("does not change the LRU order: a peeked key is still the least recently used", async () => {
+    const cache = new WeatherCache<number>(TTL, 2);
+    await cache.getWithMeta("a", async () => 1, -1, undefined, Infinity, () => 0);
+    await cache.getWithMeta("b", async () => 2, -1, undefined, Infinity, () => 0);
+    expect(cache.peek("a", Infinity, () => 0)).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    await cache.getWithMeta("c", async () => 3, -1, undefined, Infinity, () => 0);
+    // "a" was peeked, not touched, so it is evicted, not "b".
+    expect(cache.peek("a", Infinity, () => 0)).toBeNull();
+    expect(cache.peek("b", Infinity, () => 0)).toEqual({ data: 2, fetchedAt: 0, stale: false });
   });
 });

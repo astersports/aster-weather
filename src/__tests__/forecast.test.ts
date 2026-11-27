@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   fetchForecast,
   getWeatherForEvent,
   clearForecastCache,
   type FetchImpl,
 } from "../index.js";
+import { setRetrySleep } from "../helpers.js";
 
 // Build a stub Open-Meteo hourly response in &timeformat=unixtime shape:
 // `time` is epoch SECONDS, not a TZ-naive local string.
@@ -29,6 +30,10 @@ function stubHourly(startSec: number, count: number): FetchImpl {
     }),
   });
 }
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("fetchForecast (unixtime → absolute epoch ms)", () => {
   beforeEach(() => clearForecastCache());

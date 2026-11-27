@@ -8,8 +8,11 @@
  *
  * v0.2.0: measurement fields are `number | null` — a missing Open-Meteo
  * reading is `null` ("unknown"), never a fabricated `0` (WX-P1-1 / AP #27,
- * #36). `weatherCode` stays a number (it drives icon dispatch; absent → 0
- * "clear", the documented neutral).
+ * #36).
+ *
+ * v0.7.0: `weatherCode`, `icon` and `description` are `number | null`,
+ * `WeatherIconKey | null` and `string | null` too. A missing or non-WMO code
+ * is `null` ("unknown"), never clear sky. A real `0` stays clear sky.
  */
 /**
  * Open-Meteo hourly coverage supports up to 16 days; we request 14 to comfortably
@@ -77,7 +80,7 @@ export interface HourlyForecast {
     apparentTemperature: number | null;
     precipitationProbability: number | null;
     precipitation: number | null;
-    weatherCode: number;
+    weatherCode: number | null;
     cloudCover: number | null;
     windSpeed: number | null;
     windGusts: number | null;
@@ -100,9 +103,9 @@ export interface EventWeather {
     feelsLike: number | null;
     precipProbability: number | null;
     precipAmount: number | null;
-    weatherCode: number;
-    description: string;
-    icon: WeatherIconKey;
+    weatherCode: number | null;
+    description: string | null;
+    icon: WeatherIconKey | null;
     windSpeed: number | null;
     windGusts: number | null;
     isDay: boolean;
@@ -113,16 +116,16 @@ export interface EventWeather {
         label: string;
         temperature: number | null;
         precipProbability: number | null;
-        weatherCode: number;
-        icon: WeatherIconKey;
+        weatherCode: number | null;
+        icon: WeatherIconKey | null;
     }>;
 }
 export interface CurrentWeather {
     temperature: number | null;
     feelsLike: number | null;
-    weatherCode: number;
-    description: string;
-    icon: WeatherIconKey;
+    weatherCode: number | null;
+    description: string | null;
+    icon: WeatherIconKey | null;
     windSpeed: number | null;
     windGusts: number | null;
     windDirection: number | null;
@@ -141,9 +144,9 @@ export interface DailyForecast {
     precipProbabilityMax: number | null;
     windSpeedMax: number | null;
     uvIndexMax: number | null;
-    weatherCode: number;
-    icon: WeatherIconKey;
-    description: string;
+    weatherCode: number | null;
+    icon: WeatherIconKey | null;
+    description: string | null;
     sunrise: string;
     sunset: string;
 }
@@ -158,13 +161,14 @@ export interface DailyForecast {
  */
 export type FetchImpl = (url: string, init?: {
     signal?: AbortSignal;
+    headers?: Record<string, string>;
 }) => Promise<{
     ok: boolean;
     status: number;
     json: () => Promise<unknown>;
 }>;
 /** Which loader an {@link WeatherErrorContext} came from. */
-export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast";
+export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast" | "getPoint" | "getHourly" | "getGrid" | "getDaily" | "getNow" | "getAlerts" | "getRadarRain" | "getStations" | "getLatestObservation";
 /**
  * Context passed to {@link FetchOptions.onError} so a consumer can tag the
  * failure by call + venue when routing it into its own tracker.

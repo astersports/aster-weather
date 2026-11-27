@@ -12,15 +12,54 @@ import {
 } from "./types.js";
 import type { CacheBehavior } from "./cache.js";
 
+const realRetrySleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The retry backoff sleep. Replaced only by the test hook {@link setRetrySleep}. */
+let retrySleep: (ms: number) => Promise<void> = realRetrySleep;
+
+/**
+ * Test hook: replace the retry backoff sleep (pass null to restore the real one).
+ * Not exported from the package index.
+ */
+export function setRetrySleep(fn: ((ms: number) => Promise<void>) | null): void {
+  retrySleep = fn ?? realRetrySleep;
+}
+
 /**
  * The resilience profile every loader's cache runs with (v0.5.0): one retry
  * (M5) + stale-while-revalidate (M6). Shared so all four loaders stay identical.
+ * The sleep reads the current {@link setRetrySleep} at call time.
  */
 export const RESILIENT_CACHE: CacheBehavior = {
   retries: FETCH_RETRY_COUNT,
   retryBackoffMs: FETCH_RETRY_BACKOFF_MS,
   swr: true,
+  sleep: (ms: number) => retrySleep(ms),
 };
+
+/**
+ * Call a consumer's error hook. A hook that throws, or returns a promise that
+ * rejects, never reaches the engine (CLAUDE.md §3 rule 6).
+ */
+export function safeReport(
+  hook: ((err: unknown) => unknown) | undefined,
+  err: unknown,
+): void {
+  if (!hook) return;
+  try {
+    const result = hook(err);
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      typeof (result as PromiseLike<unknown>).then === "function"
+    ) {
+      (result as PromiseLike<unknown>).then(undefined, () => {});
+    }
+  } catch {
+    // The consumer's hook failed; the engine's answer is unchanged.
+  }
+}
 
 /**
  * Bind a loader's `{ call, lat, lon }` context onto the consumer's `onError`
@@ -155,6 +194,53 @@ export async function fetchJsonWithTimeout(
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // The body read is INSIDE the race now — a stalled body can't outlive the deadline.
     return await res.json();
+  };
+
+  try {
+    return await Promise.race([fetchAndParse(), timeout]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
+}
+
+/**
+ * Fetch a URL and return its HTTP status with its parsed JSON body, under the
+ * SAME single abort/timeout deadline as {@link fetchJsonWithTimeout} (the
+ * headers read and the body read share one budget).
+ *
+ * Unlike `fetchJsonWithTimeout`, a non-2xx response does NOT throw: it returns
+ * `{ status, body: null }` so the caller can tell a 404 from a 500. Throws on
+ * timeout, on a network failure and on a JSON parse failure of a 2xx body.
+ * `headers` is passed to the fetch impl only when given. Internal, un-exported.
+ */
+export async function fetchJsonStatus(
+  url: string,
+  opts: FetchOptions & { headers?: Record<string, string> } = {},
+): Promise<{ status: number; body: unknown }> {
+  const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort(); // free a well-behaved impl's socket (headers OR body)
+      reject(new Error(`fetch timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  const fetchAndParse = async (): Promise<{ status: number; body: unknown }> => {
+    const impl: FetchImpl | undefined =
+      opts.fetchImpl ??
+      (typeof fetch !== "undefined"
+        ? (fetch as unknown as FetchImpl)
+        : undefined);
+    if (!impl) throw new Error("No fetch implementation available");
+    const init = opts.headers
+      ? { signal: controller.signal, headers: opts.headers }
+      : { signal: controller.signal };
+    const res = await impl(url, init);
+    if (!res.ok) return { status: res.status, body: null };
+    // The body read is INSIDE the race, same as fetchJsonWithTimeout.
+    return { status: res.status, body: await res.json() };
   };
 
   try {

@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   getDailyForecast,
   clearDailyCache,
   type FetchImpl,
 } from "../index.js";
+import { setRetrySleep } from "../helpers.js";
 
 // Stub an Open-Meteo `daily` response with `count` days.
 function stubDaily(count: number): FetchImpl {
@@ -29,6 +30,10 @@ function stubDaily(count: number): FetchImpl {
     }),
   });
 }
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getDailyForecast", () => {
   beforeEach(() => clearDailyCache());

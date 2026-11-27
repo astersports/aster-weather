@@ -1,7 +1,7 @@
 {
   "name": "@aster/weather",
-  "version": "0.6.0",
-  "description": "Framework-agnostic weather core (Open-Meteo) + React SVG weather icons for the Aster Sports family. Canonical engine extracted from St. Patrick, merged with the aster-sports build's improvements.",
+  "version": "0.8.0",
+  "description": "Official US weather for Aster projects: National Weather Service forecasts, station readings, alerts and NOAA radar, with provenance on station readings and forecasts, plus React SVG weather icons. The Open-Meteo fetchers are deprecated.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
@@ -58,7 +58,10 @@
     "open-meteo",
     "forecast",
     "wmo",
-    "aster-sports"
+    "aster-sports",
+    "nws",
+    "noaa",
+    "radar"
   ],
   "pnpm": {
     "overrides": {
