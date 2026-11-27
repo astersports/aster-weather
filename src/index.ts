@@ -6,7 +6,7 @@
  * - The NWS and NOAA engine (v0.8.0): official US weather. `getWeather` returns
  *   every part for a point; `getNow`, `getHourly`, `getDaily`, `getAlerts`,
  *   `getRadarRain`, `getSun`, `getMoon` and `getEventWeather` return one part
- *   each. Every reading carries a `Stamp` (kind, time, fetch time, stale, source).
+ *   each. Station readings, forecasts and the event reading carry a `Stamp` (kind, time, fetch time, stale, source).
  *   The engine never throws. US coverage only; outside it the answer is `null`.
  *   Hosts are the two constants in `src/nws/http.ts`.
  *

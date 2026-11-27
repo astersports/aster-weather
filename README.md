@@ -85,15 +85,21 @@ outside US coverage. Each part of the report (`now`, `hourly`, `daily`, `alerts`
 
 ## 5. Every reading says what it is
 
-Every engine reading carries a `Stamp`:
+Station readings, forecasts and the event reading carry a `Stamp`:
 
 | Field | Meaning |
 |---|---|
 | `kind` | `observed` (a station measurement) or `forecast` (an official forecast). |
-| `at` | Epoch ms the reading is for: the observation time, or the start of the forecast hour. For hourly and daily forecasts, the time NWS issued the forecast. |
+| `at` | Epoch ms the reading is for: the observation time, or the start of the forecast hour. For hourly and daily forecasts, the time NWS issued the forecast (or, when NWS gives none, the time the engine read the response). |
 | `fetchedAt` | Epoch ms the engine fetched it. |
 | `stale` | `true` whenever the reading is served past its freshness window, from memory or from the store. |
 | `source` | `nws-station` or `nws-forecast`. |
+
+Alerts, sun times, the moon and the radar carry no `Stamp`. An alert is dated by its own `onset` and
+`ends` times. `SunTimes` is dated by its `sunrise` and `sunset`. `MoonPhase` is dated by the time you
+pass to `getMoon(at)`. A radar answer is dated by `checkedAt` (the fetch that produced it) and by its
+frame times, `latestFrameAt` and `bridgeFrames` (section 9). An alert list does not say when it was
+fetched, or whether it is a copy served after a failed refresh (see Known limits).
 
 Label a reading by its `kind`:
 
@@ -138,7 +144,7 @@ An alert with no end time stays until NWS stops sending it (section 10).
 
 The ladder in `load()` in `src/now.ts`, in order:
 
-1. Ask for the point's station list, nearest first. Only the first two stations are tried (a literal `slice(0, 2)` in `src/now.ts`; there is no named constant).
+1. Ask for the point's station list. The engine keeps the order NWS gives and tries the first two (a literal `slice(0, 2)` in `src/now.ts`; there is no named constant).
 2. For each of those two, read the latest observation. It is used when it has a temperature and
    is at most `MAX_OBSERVATION_AGE_MS` (90 min) old. A station that fails is skipped, and the
    failure is reported once.
@@ -248,7 +254,7 @@ epoch-ms number or a `Date`.
 
 | Option | Use |
 |---|---|
-| `fetchImpl` | The injected fetch (type `FetchImpl`). Every request goes through it. This is the SSRF boundary: a URL is refused before any request unless its origin is one of the two hosts in `src/nws/http.ts`, and a URL taken from an NWS response is used only when it is under `api.weather.gov`. Default: global `fetch`. |
+| `fetchImpl` | The injected fetch (type `FetchImpl`). Every request goes through it. This is the SSRF boundary. An NWS or NOAA request is refused before it is made unless its origin is one of the two hosts in `src/nws/http.ts`, and a URL taken from an NWS response is used only when it is under `api.weather.gov`. The Open-Meteo fetchers call their own fixed host. Default: global `fetch`. |
 | `timeoutMs` | Timeout for each request, in ms. Default `FETCH_TIMEOUT_MS` (5000). The radar request never waits longer than `RADAR_TIMEOUT_MS` (4000). |
 | `onError(err, ctx)` | Called once for each fetch that ultimately fails, after its retry and just before the stale or empty fallback. Never once per attempt. `ctx` is `{ call, lat, lon }`, where `call` is one of the `WeatherCall` labels: `getPoint`, `getStations`, `getLatestObservation`, `getGrid`, `getHourly`, `getDaily`, `getNow`, `getAlerts`, `getRadarRain`, and the four Open-Meteo labels `fetchForecast`, `getCurrentWeather`, `getDailyForecast` and `getNowcast` (section 19). A hook that throws or rejects is ignored. |
 | `userAgent` | Sent as the `User-Agent` header on every NWS and NOAA request. NWS asks servers to identify themselves. **Servers only:** a browser cannot set this header. Default: none sent. |
@@ -290,6 +296,7 @@ The `localStorage` adapter is in section 3. It is type-checked against this inte
 The engine never throws. A failed part becomes `null`, a stale reading or an empty list.
 
 - **`onError`** fires once for each fetch that ultimately fails. A hook that throws is ignored.
+- **`clearWeatherCaches()`** clears every in-memory cache and hold of the engine. It does not touch your `store`, and it does not clear the Open-Meteo caches, which have their own clear functions.
 - **Retry.** The NWS fetches that run through the cache (the point, the station list, the grid,
   the hourly and seven-day forecasts, and the alerts) retry once after `FETCH_RETRY_BACKOFF_MS`
   (500 ms). The current reading and the radar are not retried at their own level. A station
@@ -409,6 +416,7 @@ Not planned:
 - **Station observations (B-014, accepted).** A station observation that fails once is not asked
   again within the same load. The next load asks again. A retry was not added, because it would
   double the wait each time a station hangs.
+- **Alerts carry no fetch time (B-018, open).** A list served after a failed refresh, for up to `ALERT_MAX_STALE_MS` (60 min), is not marked as stale, so a caller cannot tell it from a fresh list. `onError` does report the failed refresh. Planned for `v0.9.0`.
 
 ## 18. Sources and terms
 
@@ -419,8 +427,8 @@ Not planned:
   alert's issuer is shown.
 - **NOAA radar.** The radar answer comes from the National Weather Service's map service. Its own metadata names NOAA and the National Weather Service as the source, and the NWS disclaimer (https://www.weather.gov/disclaimer) says NOAA and NWS data presented through map services is in the public domain. Both were read on 2026-11-27. The same three conditions apply as for all NWS information: do not claim it as your own, do not imply endorsement by or affiliation with NOAA or the NWS, and do not modify it and present it as official.
 - **The hosts** are the two constants `NWS_API` (`https://api.weather.gov`) and `NOAA_MAPS`
-  (`https://mapservices.weather.noaa.gov`) in `src/nws/http.ts`. Every request is refused before it
-  is made unless its origin is one of them.
+  (`https://mapservices.weather.noaa.gov`) in `src/nws/http.ts`. Every NWS and NOAA request is refused
+  before it is made unless its origin is one of them. The deprecated Open-Meteo fetchers call their own host (section 19).
 - **Open-Meteo** is covered in section 19.
 
 ## 19. Deprecated: the Open-Meteo fetchers
@@ -512,7 +520,7 @@ additive · **patch** = behaviour-preserving fix. On 0.x a break ships as a mino
 | `v0.9.0` | Icons and glyphs for the newer conditions and measurements. | Breaking for an exhaustive switch on the icon key |
 | `v0.10.0` | Page parts for everything in `v0.8.0`. | Additive |
 | `v0.11.0` | UV index, outlooks, air quality, and their parts. The design doc also lists heat stress here; the hourly heat-stress field is already in `v0.8.0`. | Additive |
-| `v1.0.0` | Open-Meteo fetchers removed, after all four consumers move. | Breaking |
+| `v1.0.0` | Open-Meteo fetchers removed, after the consumers move. | Breaking |
 
 A **minor or major tag is held** until the merge commit carries `[release-approved]`
 (`.github/workflows/auto-tag.yml`). A release that carries design or shape cannot ship by

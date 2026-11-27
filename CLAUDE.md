@@ -47,8 +47,7 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
    retry, immediately before the stale/empty fallback. Never once per attempt.
 6. **The engine never throws to callers.** Failure becomes stale-or-empty. Consumers do not wrap
    calls in try/catch; a change that lets a throw escape is a breaking change.
-7. **Every engine reading carries its `Stamp`; past its maximum age it is dropped, never shown**
-   (`MAX_AGE_MS`, `ALERT_MAX_STALE_MS`, `MAX_FRAME_AGE_MS`).
+7. **Every station reading, forecast and event reading carries its `Stamp`; any reading past its maximum age is dropped, never shown** (`MAX_AGE_MS`, `ALERT_MAX_STALE_MS`, `MAX_FRAME_AGE_MS`).
 8. **Radar may only add rain.** A radar that cannot answer changes nothing; a frame older than
    `MAX_FRAME_AGE_MS` never claims.
 9. **NWS alert text is never edited.**

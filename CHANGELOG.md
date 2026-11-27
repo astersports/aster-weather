@@ -9,14 +9,14 @@ bump); **minor** = additive; **patch** = behavior-preserving fix.
 
 ## 0.8.0 — 2026-11-27
 
-**Additive.** This release adds the NWS and NOAA engine: official US weather, with a stamp on every
+**Additive, with one type-level change that can break a build** (`WeatherCall`, below). This release adds the NWS and NOAA engine: official US weather, with a stamp on every
 reading. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
 
 ### Added
 - **Engine functions:** `getWeather` (every part in one report), `getNow`, `getHourly`, `getDaily`,
   `getAlerts`, `getRadarRain`, `getSun`, `getMoon`, `getEventWeather`, and `clearWeatherCaches` to
   clear every engine cache and hold.
-- **Provenance:** every engine reading carries a `Stamp` (`kind`, `at`, `fetchedAt`, `stale`,
+- **Provenance:** station readings, forecasts and the event reading carry a `Stamp` (`kind`, `at`, `fetchedAt`, `stale`,
   `source`). The age bounds and retry waits are exported as constants: `MAX_AGE_MS`, `FRESH_MS`,
   `MAX_OBSERVATION_AGE_MS`, `ALERT_MAX_STALE_MS`, `MAX_FRAME_AGE_MS`, `RADAR_TIMEOUT_MS`,
   `RADAR_RETRY_AFTER_MS`, `GRID_RETRY_AFTER_MS`, `SUN_REFRESH_AFTER_MS` and `POINT_RETRY_AFTER_MS`.
@@ -32,6 +32,9 @@ reading. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
 ### Changed
 - A throwing `onError` hook no longer rejects a fetch, and a rejecting one no longer causes an
   unhandled rejection. This holds for every fetcher, old or new. (Backlog B-001.)
+- **`FetchImpl`'s `init` argument can now carry `headers`** (`init?: { signal?; headers? }`). The NWS and
+  NOAA engine sends `Accept: application/geo+json` on every request, and a `User-Agent` when you set
+  `userAgent`. The Open-Meteo fetchers send no headers.
 
 ### Deprecated
 - `fetchForecast`, `getCurrentWeather`, `getDailyForecast`, `getNowcast` and `getWeatherForEvent`.
@@ -53,6 +56,7 @@ reading. The Open-Meteo fetchers are deprecated, and they keep their behaviour.
 - NWS rate limits are not disclosed.
 - B-014 (accepted): a station observation that fails once is not asked again within the same load.
 - B-017 (open): if the clock steps back, a cache entry can stay fresh past its limit.
+- B-018 (open): an alert list carries no fetch time, so a list served after a failed refresh is not marked stale.
 
 ## 0.7.0 — 2026-11-27
 
