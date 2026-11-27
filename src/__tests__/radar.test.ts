@@ -11,6 +11,8 @@ import {
   radarCondition,
   rainClaimFrom,
   radarWmoCode,
+  radarTimeoutMs,
+  RADAR_TIMEOUT_MS,
   BRIDGE_FRAMES,
   type EchoIntensity,
   type RadarFrame,
@@ -708,5 +710,304 @@ describe("getDaily with the radar", () => {
     const { calls, fetchImpl } = dailyRouter(ok(radarFixture));
     await getDaily(COORDS, { fetchImpl, now: () => NOW });
     expect(calls.some((u) => u.startsWith(RADAR_PREFIX))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Latency: one attempt, four seconds at most, alongside the reading
+// ---------------------------------------------------------------------------
+
+const isRadarCall = (u: string) => u.startsWith(RADAR_PREFIX);
+const VENUE_TODAY = "2026-11-28"; // the venue's date at 14:00 UTC on 11-28
+const NEXT_DAY = "2026-11-29";
+const DAY_AT = Date.parse("2026-11-28T14:00:00Z");
+
+/** A green newest frame, two minutes before `t`: the radar claims rain at `t`. */
+const greenAt = (t: number) => ok(identify(["30 200 30 255"], [t - 2 * MIN]));
+
+/** A promise the test settles by hand, so the order of requests can be proven. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+/** Let ready microtasks run until `cond` holds. Bounded, so a missing request fails rather than hangs. */
+async function until(cond: () => boolean): Promise<void> {
+  for (let i = 0; i < 500 && !cond(); i += 1) await Promise.resolve();
+  expect(cond(), "the condition was never reached").toBe(true);
+}
+
+/**
+ * Await a call under fake timers. A failing upstream is retried after a backoff
+ * timer, so advance the clock until the call settles (bounded).
+ */
+async function settle<T>(p: Promise<T>): Promise<T> {
+  let done = false;
+  const tracked = p.finally(() => {
+    done = true;
+  });
+  for (let i = 0; i < 100 && !done; i += 1) await vi.advanceTimersByTimeAsync(100);
+  expect(done, "the call never settled").toBe(true);
+  return tracked;
+}
+
+/** A router where one URL waits for `gate` before it answers. */
+function gatedRouter(script: Record<string, Reply>, gateUrl: string, gate: Promise<Reply>, radarReply?: Reply) {
+  const calls: string[] = [];
+  const fetchImpl: FetchImpl = async (url) => {
+    calls.push(url);
+    let r: Reply | undefined = url === gateUrl ? await gate : script[url];
+    if (!r && radarReply && isRadarCall(url)) r = radarReply;
+    if (!r) r = { status: 404, body: {} };
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body };
+  };
+  return { calls, fetchImpl };
+}
+
+/** A radar that never answers, and gives up only when its abort signal fires. */
+function hungRadar(calls: string[]): FetchImpl {
+  return (url, init) => {
+    calls.push(url);
+    return new Promise<never>((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+  };
+}
+
+describe("radarTimeoutMs — the caller can shorten the radar budget, never lengthen it", () => {
+  it("the radar's own budget is four seconds", () => {
+    expect(RADAR_TIMEOUT_MS).toBe(4000);
+  });
+
+  it.each([
+    [undefined, 4000],
+    [100, 100],
+    [9000, 4000],
+    [0, 4000],
+    [-5, 4000],
+    [NaN, 4000],
+    [Infinity, 4000],
+  ])("radarTimeoutMs(%s) is %s", (input, expected) => {
+    expect(radarTimeoutMs(input)).toBe(expected);
+  });
+});
+
+describe("getRadarRain — one attempt, four seconds at most", () => {
+  it("a 500 is asked once, never retried: one radar request, one onError, null", async () => {
+    const { calls, fetchImpl } = router({}, fail(500));
+    const onError = vi.fn<(err: unknown, ctx: WeatherErrorContext) => void>();
+    const pending = getRadarRain(COORDS, { fetchImpl, onError, now: () => NOW });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await pending).toBeNull();
+    expect(calls.filter(isRadarCall)).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("a hung radar with a 20 ms caller budget: null, one request, one onError, back in well under a second", async () => {
+    vi.useRealTimers();
+    const calls: string[] = [];
+    const onError = vi.fn();
+    const started = Date.now();
+    const result = await getRadarRain(COORDS, {
+      fetchImpl: hungRadar(calls),
+      onError,
+      timeoutMs: 20,
+      now: () => NOW,
+    });
+    const elapsed = Date.now() - started;
+    expect(result).toBeNull();
+    expect(calls.filter(isRadarCall)).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it("with no caller budget a hung radar settles at four seconds, not later, after one request", async () => {
+    const calls: string[] = [];
+    const onError = vi.fn();
+    let settled = false;
+    const pending = getRadarRain(COORDS, { fetchImpl: hungRadar(calls), onError, now: () => NOW }).then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(settled, "still waiting at 3999 ms").toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toBeNull();
+    expect(calls.filter(isRadarCall)).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the radar is asked alongside the reading, not after it", () => {
+  it("getNow sends the radar request while the station observation is still unanswered", async () => {
+    const gate = deferred<Reply>();
+    const { calls, fetchImpl } = gatedRouter(
+      { [POINT_URL]: ok(points), [STATIONS_URL]: ok(stations) },
+      OBS_KHPN,
+      gate.promise,
+      greenAt(NOW),
+    );
+    const pending = getNow(COORDS, { fetchImpl, now: () => NOW, radar: true });
+    await until(() => calls.includes(OBS_KHPN) && calls.some(isRadarCall));
+    gate.resolve(ok(observation));
+    const n = await pending;
+    expect(n).toMatchObject({ stamp: { kind: "observed" }, condition: "light-rain", rainSource: "radar" });
+  });
+
+  it("getDaily sends the radar request while the seven-day forecast is still unanswered", async () => {
+    const gate = deferred<Reply>();
+    const { calls, fetchImpl } = gatedRouter(
+      { [POINT_URL]: ok(points) },
+      FORECAST_URL,
+      gate.promise,
+      greenAt(DAY_AT),
+    );
+    const pending = getDaily(COORDS, { fetchImpl, now: () => DAY_AT, radar: true });
+    await until(() => calls.includes(FORECAST_URL) && calls.some(isRadarCall));
+    gate.resolve(ok(forecast));
+    const out = await pending;
+    expect(out!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar", dayCondition: "light-rain" });
+    expect(out!.days.find((d) => d.date === NEXT_DAY)).not.toHaveProperty("rainSource");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Radar is applied on every path that returns a reading (getNow)
+// ---------------------------------------------------------------------------
+
+describe("getNow with the radar: every path that returns a reading takes the claim", () => {
+  it("the forecast hour, when the stations fail: wet, from the hour's own dry reading", async () => {
+    const at = Date.parse("2026-11-28T01:30:00Z"); // the 20:00 hour at the venue, mostly cloudy
+    const { fetchImpl } = healthy({ [STATIONS_URL]: fail(500) }, greenAt(at));
+    const plain = await settle(getNow(COORDS, { fetchImpl, now: () => at }));
+    expect(plain!.stamp.kind).toBe("forecast");
+    expect(plain!.condition).toBe("mostly-cloudy");
+    const wet = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(wet).toMatchObject({ condition: "light-rain", rainSource: "radar", stamp: { kind: "forecast" } });
+    expect(plain, "the cached copy carries no claim").not.toHaveProperty("rainSource");
+  });
+
+  it("a stale cached reading after a failed refresh: wet, and the cached copy carries no claim", async () => {
+    const store = memoryStore();
+    const seeded = await getNow(COORDS, { fetchImpl: healthy().fetchImpl, now: () => NOW, store });
+    expect(seeded!.stamp.kind).toBe("observed");
+    const later = NOW + 30 * MIN; // past the 10-minute freshness, inside the 3-hour bound
+    const failing = { [OBS_KHPN]: fail(500), [OBS_KLGA]: fail(500), [HOURLY_URL]: fail(500) };
+    const onError = vi.fn();
+    const n = await settle(
+      getNow(COORDS, {
+        fetchImpl: healthy(failing, greenAt(later)).fetchImpl,
+        now: () => later,
+        radar: true,
+        store,
+        onError,
+      }),
+    );
+    const getNowErrors = onError.mock.calls.filter(([, ctx]) => ctx.call === "getNow");
+    expect(getNowErrors, "one onError for the failed getNow").toHaveLength(1);
+    expect(n).toMatchObject({ stamp: { stale: true }, condition: "light-rain", rainSource: "radar" });
+
+    const plain = await settle(getNow(COORDS, { fetchImpl: healthy(failing).fetchImpl, now: () => later, store }));
+    expect(plain).not.toHaveProperty("rainSource");
+    expect(plain!.condition).toBe("mostly-cloudy");
+    expect(JSON.parse(store.data.get(STORE_KEY)!).data).not.toHaveProperty("rainSource");
+  });
+
+  it("a last-good reading from the store on a cold cache: wet, and the stored copy carries no claim", async () => {
+    const store = memoryStore();
+    await getNow(COORDS, { fetchImpl: healthy().fetchImpl, now: () => NOW, store });
+    clearNowCache();
+    clearStationsCache();
+    const later = NOW + 30 * MIN;
+    const failing = { [OBS_KHPN]: fail(500), [OBS_KLGA]: fail(500), [HOURLY_URL]: fail(500) };
+    const n = await settle(
+      getNow(COORDS, {
+        fetchImpl: healthy(failing, greenAt(later)).fetchImpl,
+        now: () => later,
+        radar: true,
+        store,
+      }),
+    );
+    expect(n).toMatchObject({ stamp: { stale: true }, condition: "light-rain", rainSource: "radar" });
+    expect(JSON.parse(store.data.get(STORE_KEY)!).data).not.toHaveProperty("rainSource");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Radar is applied on every path that returns a reading (getDaily)
+// ---------------------------------------------------------------------------
+
+describe("getDaily with the radar: stale and stored paths take the claim on today only", () => {
+  it("a stale cached forecast after a failed refresh: today wet, tomorrow untouched, the cached copy clean", async () => {
+    const store = memoryStore();
+    const seeded = await getDaily(COORDS, { fetchImpl: dailyRouter().fetchImpl, now: () => DAY_AT, store });
+    expect(seeded!.days.find((d) => d.date === VENUE_TODAY)!.dayCondition).toBe("mostly-cloudy");
+    const later = DAY_AT + 70 * MIN; // past the hour's freshness, inside 24 hours
+    const failing = router({ [POINT_URL]: ok(points), [FORECAST_URL]: fail(500) }, greenAt(later));
+    const n = await settle(getDaily(COORDS, { fetchImpl: failing.fetchImpl, now: () => later, radar: true, store }));
+    expect(n!.stamp.stale).toBe(true);
+    expect(n!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ dayCondition: "light-rain", rainSource: "radar" });
+    expect(n!.days.find((d) => d.date === NEXT_DAY)).not.toHaveProperty("rainSource");
+
+    const plain = await settle(getDaily(COORDS, { fetchImpl: failing.fetchImpl, now: () => later, store }));
+    expect(plain!.days.find((d) => d.date === VENUE_TODAY)).not.toHaveProperty("rainSource");
+    expect(plain!.days.find((d) => d.date === VENUE_TODAY)!.dayCondition).toBe("mostly-cloudy");
+  });
+
+  it("a last-good forecast from the store on a cold cache: today wet, and the stored copy clean", async () => {
+    const store = memoryStore();
+    await getDaily(COORDS, { fetchImpl: dailyRouter().fetchImpl, now: () => DAY_AT, store });
+    clearDailyCache();
+    const later = DAY_AT + 70 * MIN;
+    const failing = router({ [POINT_URL]: ok(points), [FORECAST_URL]: fail(500) }, greenAt(later));
+    const n = await settle(getDaily(COORDS, { fetchImpl: failing.fetchImpl, now: () => later, radar: true, store }));
+    expect(n!.stamp.stale).toBe(true);
+    expect(n!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ dayCondition: "light-rain", rainSource: "radar" });
+    expect(n!.days.find((d) => d.date === NEXT_DAY)).not.toHaveProperty("rainSource");
+    const stored = JSON.parse(store.data.get(DAILY_STORE_KEY)!) as { data: { days: Array<Record<string, unknown>> } };
+    expect(stored.data.days.find((d) => d.date === VENUE_TODAY)).not.toHaveProperty("rainSource");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bridge below the rain floor, with two frames
+// ---------------------------------------------------------------------------
+
+describe("the two newest frames below the floor claim nothing", () => {
+  const frameAt = NOW - 2 * MIN;
+
+  it("two unknown-echo frames claim nothing on either path, even with rain a third frame back", () => {
+    const radar = radarOf([
+      { at: frameAt, intensity: "unknown-echo" },
+      { at: frameAt - 7 * MIN, intensity: "unknown-echo" },
+      { at: frameAt - 14 * MIN, intensity: "rain" },
+    ]);
+    const reading = dry({ humidity: 97 });
+    expect(applyRadarToNow(reading, radar)).toBe(reading);
+    const days = [day(TODAY)];
+    expect(applyRadarToToday(days, radar, TODAY)).toBe(days);
+  });
+
+  it("two light frames claim nothing on the daily path, which carries no humidity", () => {
+    const radar = radarOf([
+      { at: frameAt, intensity: "light" },
+      { at: frameAt - 7 * MIN, intensity: "light" },
+    ]);
+    const days = [day(TODAY)];
+    expect(applyRadarToToday(days, radar, TODAY)).toBe(days);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A point outside coverage asks the radar nothing
+// ---------------------------------------------------------------------------
+
+describe("a point outside coverage makes no radar request", () => {
+  it("getNow and getDaily are null with radar: true, and the radar is never asked", async () => {
+    const { calls, fetchImpl } = healthy({ [POINT_URL]: fail(404) }, greenAt(NOW));
+    expect(await getNow(COORDS, { fetchImpl, now: () => NOW, radar: true })).toBeNull();
+    expect(await getDaily(COORDS, { fetchImpl, now: () => NOW, radar: true })).toBeNull();
+    expect(calls.filter(isRadarCall)).toHaveLength(0);
   });
 });

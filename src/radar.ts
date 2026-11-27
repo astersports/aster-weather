@@ -13,7 +13,7 @@
  * - A claim is stamped with its own frame's time, never with "now".
  */
 import { WeatherCache } from "./cache.js";
-import { RESILIENT_CACHE, bindOnError, coordKey, isValidCoord } from "./helpers.js";
+import { bindOnError, coordKey, isValidCoord } from "./helpers.js";
 import { FRESH_MS, MAX_AGE_MS, type EngineOptions } from "./provenance.js";
 import { NOAA_MAPS, nwsJson } from "./nws/http.js";
 import { isPrecipitation, type Condition } from "./condition.js";
@@ -189,8 +189,30 @@ export function rainClaimFrom(
   return null;
 }
 
-/** Cache of answers keyed by coordinate. A single shared value would hand one point's weather to another. */
-const radarCache = new WeatherCache<RadarRain | null>(FRESH_MS.radar, 200, RESILIENT_CACHE);
+/**
+ * The radar's own budget for one request, in ms. The parish port asks once with
+ * this budget. A hung service costs one budget, not a retry on top of it.
+ */
+export const RADAR_TIMEOUT_MS = 4000;
+
+/**
+ * The timeout for one radar request. A caller may shorten the budget but never
+ * lengthen it: a finite, positive value below `RADAR_TIMEOUT_MS` is used as
+ * given, and anything else (absent, zero, negative, NaN, Infinity, or longer)
+ * is `RADAR_TIMEOUT_MS`.
+ */
+export function radarTimeoutMs(callerMs: number | undefined): number {
+  return typeof callerMs === "number" && Number.isFinite(callerMs) && callerMs > 0 && callerMs < RADAR_TIMEOUT_MS
+    ? callerMs
+    : RADAR_TIMEOUT_MS;
+}
+
+/**
+ * Cache of answers keyed by coordinate. A single shared value would hand one
+ * point's weather to another. No retry: the radar is asked once per fetch, so a
+ * hung service costs one `RADAR_TIMEOUT_MS`, not two attempts plus a backoff.
+ */
+const radarCache = new WeatherCache<RadarRain | null>(FRESH_MS.radar, 200, { retries: 0 });
 
 function identifyUrl(lat: number, lon: number): string {
   const params = new URLSearchParams({
@@ -219,7 +241,10 @@ export async function getRadarRain(
   const meta = await radarCache.getWithMeta(
     coordKey(lat, lon),
     async () => {
-      const data = await nwsJson(identifyUrl(lat, lon), opts);
+      const data = await nwsJson(identifyUrl(lat, lon), {
+        ...opts,
+        timeoutMs: radarTimeoutMs(opts.timeoutMs),
+      });
       const result = resolveRadar(parseRadarFrames(data), now());
       if (!result) throw new Error("radar: no usable frames");
       return result;
@@ -230,6 +255,14 @@ export async function getRadarRain(
     now,
   );
   return meta.data;
+}
+
+/**
+ * Start the radar request now, so it runs alongside the caller's reading. The
+ * promise never rejects: a radar that fails is `null` (unknown, never dry).
+ */
+export function startRadarRain(coords: Coords, opts: EngineOptions = {}): Promise<RadarRain | null> {
+  return getRadarRain(coords, opts).catch(() => null);
 }
 
 /**

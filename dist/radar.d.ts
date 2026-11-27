@@ -66,11 +66,28 @@ export interface RainClaim {
  */
 export declare function rainClaimFrom(radar: RadarRain | null | undefined, humidity: number | null | undefined): RainClaim | null;
 /**
+ * The radar's own budget for one request, in ms. The parish port asks once with
+ * this budget. A hung service costs one budget, not a retry on top of it.
+ */
+export declare const RADAR_TIMEOUT_MS = 4000;
+/**
+ * The timeout for one radar request. A caller may shorten the budget but never
+ * lengthen it: a finite, positive value below `RADAR_TIMEOUT_MS` is used as
+ * given, and anything else (absent, zero, negative, NaN, Infinity, or longer)
+ * is `RADAR_TIMEOUT_MS`.
+ */
+export declare function radarTimeoutMs(callerMs: number | undefined): number;
+/**
  * Radar rain at a point, or `null` when the radar cannot answer (invalid
  * coordinates, fetch failure, or no usable frames). A failed refresh serves the
  * last answer for up to `MAX_AGE_MS.radar`. Never throws.
  */
 export declare function getRadarRain(coords: Coords, opts?: EngineOptions): Promise<RadarRain | null>;
+/**
+ * Start the radar request now, so it runs alongside the caller's reading. The
+ * promise never rejects: a radar that fails is `null` (unknown, never dry).
+ */
+export declare function startRadarRain(coords: Coords, opts?: EngineOptions): Promise<RadarRain | null>;
 /**
  * Add a radar rain claim to a current reading. Returns the same object unless
  * the reading is dry and the radar claims rain. Never removes precipitation

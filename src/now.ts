@@ -16,7 +16,7 @@ import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import type { Coords } from "./types.js";
 import { getHourly, type HourReading } from "./nws/hourly.js";
 import { getPoint } from "./nws/point.js";
-import { applyRadarToNow, getRadarRain } from "./radar.js";
+import { applyRadarToNow, startRadarRain } from "./radar.js";
 import {
   getLatestObservation,
   getStations,
@@ -162,6 +162,19 @@ export async function getNow(
 ): Promise<NowReading | null> {
   const point = await getPoint(coords, opts);
   if (!point) return null;
+  // The radar, when asked, runs alongside the reading: started once the point is
+  // known (so a point outside coverage asks nothing), before the reading loads.
+  const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
+  const reading = await readNow(coords, opts);
+  if (!reading) return null;
+  return radar ? applyRadarToNow(reading, await radar) : reading;
+}
+
+/**
+ * The reading from the cache, else from the last-good store. Neither copy
+ * carries a radar claim: the claim is added by `getNow`, after this returns.
+ */
+async function readNow(coords: Coords, opts: EngineOptions): Promise<NowReading | null> {
   const { lat, lon } = coords;
   const now = opts.now ?? Date.now;
   const key = `${fmt(lat)},${fmt(lon)}`;
@@ -181,23 +194,10 @@ export async function getNow(
     MAX_AGE_MS.now,
     now,
   );
-  if (meta.data) return withRadar(withStamp(meta.data, meta.fetchedAt, meta.stale), coords, opts);
+  if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
 
   const last = await readLastGood<Body>(opts.store, storeKey, MAX_AGE_MS.now, now());
-  return last ? withRadar(withStamp(last.data, last.fetchedAt, true), coords, opts) : null;
-}
-
-/**
- * The radar upgrade, applied after the reading is cached or read from the store,
- * so neither copy carries a radar claim. Only when `opts.radar` is `true`.
- */
-async function withRadar(
-  reading: NowReading,
-  coords: Coords,
-  opts: EngineOptions,
-): Promise<NowReading> {
-  if (opts.radar !== true) return reading;
-  return applyRadarToNow(reading, await getRadarRain(coords, opts));
+  return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
 
 /** Test hook: clear every cached current reading. */
