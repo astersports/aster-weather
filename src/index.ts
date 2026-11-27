@@ -1,10 +1,21 @@
 /**
- * @aster/weather — framework-agnostic weather core.
+ * @aster/weather — framework-agnostic weather package.
  *
- * Canonical engine shape extracted from St. Patrick (`server/weather/*`),
- * with genuine improvements merged from the aster-sports build. See
- * DERIVATION.md for the diff and merge rationale.
+ * Two halves, both public:
  *
+ * - The NWS and NOAA engine (v0.8.0): official US weather. `getWeather` returns
+ *   every part for a point; `getNow`, `getHourly`, `getDaily`, `getAlerts`,
+ *   `getRadarRain`, `getSun`, `getMoon` and `getEventWeather` return one part
+ *   each. Every reading carries a `Stamp` (kind, time, fetch time, stale, source).
+ *   The engine never throws. US coverage only; outside it the answer is `null`.
+ *   Hosts are the two constants in `src/nws/http.ts`.
+ *
+ * - The Open-Meteo fetchers (`fetchForecast`, `getCurrentWeather`,
+ *   `getDailyForecast`, `getNowcast`, `getWeatherForEvent`): deprecated, and
+ *   removed in `v1.0.0` after the consumers move. Open-Meteo's free API is for
+ *   non-commercial use only; see the README.
+ *
+ * Also here: the WMO code tables, pure helpers, and the coordinate helpers.
  * React SVG icons ship from the `@aster/weather/icons` subpath.
  */
 
@@ -50,6 +61,82 @@ export {
 
 // Public helpers (coordKey + fetchJsonWithTimeout are internal — not exported)
 export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
+
+// ---- NWS and NOAA engine (v0.8.0) -----------------------------------------
+
+// The one-call report: every part for one point
+export { getWeather, type WeatherReport } from "./weather.js";
+
+// Current conditions: a station reading, else the forecast hour now
+export { getNow, MAX_OBSERVATION_AGE_MS, type NowReading } from "./now.js";
+
+// Hourly forecast, joined with the forecast grid
+export {
+  getHourly,
+  GRID_RETRY_AFTER_MS,
+  type HourlyResult,
+  type HourReading,
+  type AmountBlock,
+} from "./nws/hourly.js";
+
+// Seven-day forecast, one reading per date
+export { getDaily, type DailyResult, type DayReading } from "./nws/daily.js";
+
+// Official alerts for a point
+export { getAlerts, ALERT_MAX_STALE_MS, type WeatherAlert } from "./nws/alerts.js";
+
+// Radar rain at a point (may only add rain)
+export {
+  getRadarRain,
+  MAX_FRAME_AGE_MS,
+  RADAR_TIMEOUT_MS,
+  RADAR_RETRY_AFTER_MS,
+  type RadarRain,
+  type RadarFrame,
+  type EchoIntensity,
+} from "./radar.js";
+
+// Sun (today only) and moon (calculated)
+export {
+  getSun,
+  getMoon,
+  SUN_REFRESH_AFTER_MS,
+  type SunTimes,
+  type MoonPhase,
+} from "./astro.js";
+
+// The forecast hour nearest an event, with the two warning flags
+export { getEventWeather, type EventReading } from "./event.js";
+
+// Conditions and icon keywords
+export {
+  conditionFromNwsIcon,
+  conditionLabel,
+  isPrecipitation,
+  NWS_ICON_CONDITION,
+  type Condition,
+  type NwsIconReading,
+} from "./condition.js";
+
+// Provenance vocabulary and age bounds
+export {
+  MAX_AGE_MS,
+  FRESH_MS,
+  type ReadingKind,
+  type Stamp,
+  type EngineOptions,
+} from "./provenance.js";
+
+// Consumer-supplied last-good store
+export type { WeatherStore } from "./store.js";
+
+// Retry hold after a failed point lookup
+export { POINT_RETRY_AFTER_MS } from "./nws/point.js";
+
+// Clear every engine cache and hold
+export { clearWeatherCaches } from "./clearAll.js";
+
+// ---- Open-Meteo fetchers (deprecated; removed in v1.0.0) ------------------
 
 // Hourly forecast + event enrichment + matcher
 export {

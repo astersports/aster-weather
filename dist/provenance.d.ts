@@ -13,7 +13,10 @@ export interface Stamp {
     at: number;
     /** Epoch ms the engine fetched it. */
     fetchedAt: number;
-    /** True when served from the last-good store past its freshness window. */
+    /**
+     * True whenever the reading is served past its freshness window, whether it
+     * comes from memory or from the last-good store. A reading inside its window is false.
+     */
     stale: boolean;
     source: "nws-station" | "nws-forecast" | "noaa-radar";
 }
@@ -38,6 +41,10 @@ export interface EngineOptions extends FetchOptions {
     userAgent?: string;
     store?: WeatherStore;
     now?: () => number;
+    /**
+     * `getNow` and `getDaily` ask the radar only when this is `true` (default off).
+     * `getWeather` asks it unless this is `false`.
+     */
     radar?: boolean;
 }
 //# sourceMappingURL=provenance.d.ts.map

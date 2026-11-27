@@ -1,10 +1,21 @@
 /**
- * @aster/weather — framework-agnostic weather core.
+ * @aster/weather — framework-agnostic weather package.
  *
- * Canonical engine shape extracted from St. Patrick (`server/weather/*`),
- * with genuine improvements merged from the aster-sports build. See
- * DERIVATION.md for the diff and merge rationale.
+ * Two halves, both public:
  *
+ * - The NWS and NOAA engine (v0.8.0): official US weather. `getWeather` returns
+ *   every part for a point; `getNow`, `getHourly`, `getDaily`, `getAlerts`,
+ *   `getRadarRain`, `getSun`, `getMoon` and `getEventWeather` return one part
+ *   each. Every reading carries a `Stamp` (kind, time, fetch time, stale, source).
+ *   The engine never throws. US coverage only; outside it the answer is `null`.
+ *   Hosts are the two constants in `src/nws/http.ts`.
+ *
+ * - The Open-Meteo fetchers (`fetchForecast`, `getCurrentWeather`,
+ *   `getDailyForecast`, `getNowcast`, `getWeatherForEvent`): deprecated, and
+ *   removed in `v1.0.0` after the consumers move. Open-Meteo's free API is for
+ *   non-commercial use only; see the README.
+ *
+ * Also here: the WMO code tables, pure helpers, and the coordinate helpers.
  * React SVG icons ship from the `@aster/weather/icons` subpath.
  */
 export type { Coords, HourlyForecast, NowcastPoint, EventWeather, CurrentWeather, DailyForecast, WeatherIconKey, FetchImpl, FetchOptions, WeatherCall, WeatherErrorContext, } from "./types.js";
@@ -13,6 +24,19 @@ export type { CacheBehavior } from "./cache.js";
 export type { WmoInfo } from "./wmo.js";
 export { WMO_CODES, getWeatherInfo, weatherInfoOrNull, WMO_EMOJI, emojiForCode, WMO_LABELS, labelForCode, rainWord, } from "./wmo.js";
 export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
+export { getWeather, type WeatherReport } from "./weather.js";
+export { getNow, MAX_OBSERVATION_AGE_MS, type NowReading } from "./now.js";
+export { getHourly, GRID_RETRY_AFTER_MS, type HourlyResult, type HourReading, type AmountBlock, } from "./nws/hourly.js";
+export { getDaily, type DailyResult, type DayReading } from "./nws/daily.js";
+export { getAlerts, ALERT_MAX_STALE_MS, type WeatherAlert } from "./nws/alerts.js";
+export { getRadarRain, MAX_FRAME_AGE_MS, RADAR_TIMEOUT_MS, RADAR_RETRY_AFTER_MS, type RadarRain, type RadarFrame, type EchoIntensity, } from "./radar.js";
+export { getSun, getMoon, SUN_REFRESH_AFTER_MS, type SunTimes, type MoonPhase, } from "./astro.js";
+export { getEventWeather, type EventReading } from "./event.js";
+export { conditionFromNwsIcon, conditionLabel, isPrecipitation, NWS_ICON_CONDITION, type Condition, type NwsIconReading, } from "./condition.js";
+export { MAX_AGE_MS, FRESH_MS, type ReadingKind, type Stamp, type EngineOptions, } from "./provenance.js";
+export type { WeatherStore } from "./store.js";
+export { POINT_RETRY_AFTER_MS } from "./nws/point.js";
+export { clearWeatherCaches } from "./clearAll.js";
 export { fetchForecast, getWeatherForTime, getWeatherForEvent, clearForecastCache, } from "./forecast.js";
 export { getNowcast, clearNowcastCache } from "./nowcast.js";
 export { getCurrentWeather, clearCurrentCache } from "./current.js";

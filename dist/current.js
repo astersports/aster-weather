@@ -35,6 +35,13 @@ function buildUrl(lat, lon) {
     });
     return `${API_BASE}?${params.toString()}`;
 }
+/**
+ * Current conditions from Open-Meteo, or `null` on failure.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getNow` (a measured station reading, or the forecast hour now). Removed in
+ * `v1.0.0`, after the consumers move. Its behaviour is unchanged.
+ */
 export async function getCurrentWeather(coords, opts = {}) {
     if (!isValidCoord(coords.lat, coords.lon))
         return null;

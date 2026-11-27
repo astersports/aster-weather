@@ -69,6 +69,13 @@ interface OpenMeteoDaily {
   };
 }
 
+/**
+ * The Open-Meteo daily forecast, or `[]` on failure.
+ *
+ * @deprecated Reads Open-Meteo's free API, which is for non-commercial use only. Use
+ * `getDaily` (the NWS seven-day forecast). Removed in `v1.0.0`, after the
+ * consumers move. Its behaviour is unchanged.
+ */
 export async function getDailyForecast(
   coords: Coords,
   opts: FetchOptions = {},
