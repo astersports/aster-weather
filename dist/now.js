@@ -15,6 +15,7 @@ import { conditionFromNwsIcon } from "./condition.js";
 import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import { getHourly } from "./nws/hourly.js";
 import { getPoint } from "./nws/point.js";
+import { applyRadarToNow, getRadarRain } from "./radar.js";
 import { getLatestObservation, getStations, } from "./nws/observations.js";
 /** The longest age an observation may have and still be the current reading. */
 export const MAX_OBSERVATION_AGE_MS = 90 * 60_000;
@@ -127,9 +128,18 @@ export async function getNow(coords, opts = {}) {
         return body;
     }, null, bindOnError(opts, "getNow", lat, lon), MAX_AGE_MS.now, now);
     if (meta.data)
-        return withStamp(meta.data, meta.fetchedAt, meta.stale);
+        return withRadar(withStamp(meta.data, meta.fetchedAt, meta.stale), coords, opts);
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.now, now());
-    return last ? withStamp(last.data, last.fetchedAt, true) : null;
+    return last ? withRadar(withStamp(last.data, last.fetchedAt, true), coords, opts) : null;
+}
+/**
+ * The radar upgrade, applied after the reading is cached or read from the store,
+ * so neither copy carries a radar claim. Only when `opts.radar` is `true`.
+ */
+async function withRadar(reading, coords, opts) {
+    if (opts.radar !== true)
+        return reading;
+    return applyRadarToNow(reading, await getRadarRain(coords, opts));
 }
 /** Test hook: clear every cached current reading. */
 export function clearNowCache() {

@@ -16,6 +16,7 @@ import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import type { Coords } from "./types.js";
 import { getHourly, type HourReading } from "./nws/hourly.js";
 import { getPoint } from "./nws/point.js";
+import { applyRadarToNow, getRadarRain } from "./radar.js";
 import {
   getLatestObservation,
   getStations,
@@ -180,10 +181,23 @@ export async function getNow(
     MAX_AGE_MS.now,
     now,
   );
-  if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
+  if (meta.data) return withRadar(withStamp(meta.data, meta.fetchedAt, meta.stale), coords, opts);
 
   const last = await readLastGood<Body>(opts.store, storeKey, MAX_AGE_MS.now, now());
-  return last ? withStamp(last.data, last.fetchedAt, true) : null;
+  return last ? withRadar(withStamp(last.data, last.fetchedAt, true), coords, opts) : null;
+}
+
+/**
+ * The radar upgrade, applied after the reading is cached or read from the store,
+ * so neither copy carries a radar claim. Only when `opts.radar` is `true`.
+ */
+async function withRadar(
+  reading: NowReading,
+  coords: Coords,
+  opts: EngineOptions,
+): Promise<NowReading> {
+  if (opts.radar !== true) return reading;
+  return applyRadarToNow(reading, await getRadarRain(coords, opts));
 }
 
 /** Test hook: clear every cached current reading. */

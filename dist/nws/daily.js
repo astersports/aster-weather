@@ -11,6 +11,7 @@ import { conditionFromNwsIcon } from "../condition.js";
 import { cToF } from "../units.js";
 import { getPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
+import { applyRadarToToday, getRadarRain } from "../radar.js";
 const STORE_PREFIX = "aw:daily:";
 const dailyCache = new WeatherCache(FRESH_MS.daily, 200, RESILIENT_CACHE);
 /** At most four decimals, trailing zeros dropped: the same key as the point cache. */
@@ -113,9 +114,32 @@ export async function getDaily(coords, opts = {}) {
         return body;
     }, null, bindOnError(opts, "getDaily", lat, lon), MAX_AGE_MS.daily, now);
     if (meta.data)
-        return withStamp(meta.data, meta.fetchedAt, meta.stale);
+        return withRadarToday(withStamp(meta.data, meta.fetchedAt, meta.stale), coords, point, opts, now);
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.daily, now());
-    return last ? withStamp(last.data, last.fetchedAt, true) : null;
+    return last ? withRadarToday(withStamp(last.data, last.fetchedAt, true), coords, point, opts, now) : null;
+}
+/**
+ * The radar upgrade for today's cell, applied after the cache or store so neither
+ * copy carries a claim. Only when `opts.radar` is `true` and the point has a time
+ * zone: today is the venue's date for `now()`. An invalid zone skips the radar.
+ */
+async function withRadarToday(result, coords, point, opts, now) {
+    if (opts.radar !== true || point.timeZone === null)
+        return result;
+    let today;
+    try {
+        today = new Intl.DateTimeFormat("en-CA", {
+            timeZone: point.timeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date(now()));
+    }
+    catch {
+        return result;
+    }
+    const radar = await getRadarRain(coords, opts);
+    return { ...result, days: applyRadarToToday(result.days, radar, today) };
 }
 /** Test hook: clear every cached daily forecast. */
 export function clearDailyCache() {
