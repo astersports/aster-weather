@@ -11,6 +11,8 @@ import { conditionFromNwsIcon } from "../condition.js";
 import { cToF } from "../units.js";
 import { getPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
+import { applyRadarToToday, startRadarRain } from "../radar.js";
+import { localDay } from "../localDay.js";
 const STORE_PREFIX = "aw:daily:";
 const dailyCache = new WeatherCache(FRESH_MS.daily, 200, RESILIENT_CACHE);
 /** At most four decimals, trailing zeros dropped: the same key as the point cache. */
@@ -100,11 +102,27 @@ function withStamp(b, fetchedAt, stale) {
  * inside its bound, or last-good in the store). Never throws.
  */
 export async function getDaily(coords, opts = {}) {
-    const { lat, lon } = coords;
     const point = await getPoint(coords, opts);
     if (!point)
         return null;
     const now = opts.now ?? Date.now;
+    // The radar, when asked, runs alongside the reading. It is for today's cell, so
+    // it starts only with a usable time zone: today is the venue's date for now().
+    const today = opts.radar === true && point.timeZone !== null ? localDay(now(), point.timeZone) : null;
+    const radar = today === null ? null : startRadarRain(coords, opts);
+    const result = await readDaily(coords, point, opts, now);
+    if (!result)
+        return null;
+    if (radar === null || today === null)
+        return result;
+    return { ...result, days: applyRadarToToday(result.days, await radar, today) };
+}
+/**
+ * The forecast from the cache, else from the last-good store. Neither copy
+ * carries a radar claim: the claim is added by `getDaily`, after this returns.
+ */
+async function readDaily(coords, point, opts, now) {
+    const { lat, lon } = coords;
     const key = `${fmt(lat)},${fmt(lon)}`;
     const storeKey = STORE_PREFIX + key;
     const meta = await dailyCache.getWithMeta(key, async () => {

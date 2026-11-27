@@ -15,6 +15,7 @@ import { conditionFromNwsIcon } from "./condition.js";
 import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import { getHourly } from "./nws/hourly.js";
 import { getPoint } from "./nws/point.js";
+import { applyRadarToNow, startRadarRain } from "./radar.js";
 import { getLatestObservation, getStations, } from "./nws/observations.js";
 /** The longest age an observation may have and still be the current reading. */
 export const MAX_OBSERVATION_AGE_MS = 90 * 60_000;
@@ -115,6 +116,19 @@ export async function getNow(coords, opts = {}) {
     const point = await getPoint(coords, opts);
     if (!point)
         return null;
+    // The radar, when asked, runs alongside the reading: started once the point is
+    // known (so a point outside coverage asks nothing), before the reading loads.
+    const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
+    const reading = await readNow(coords, opts);
+    if (!reading)
+        return null;
+    return radar ? applyRadarToNow(reading, await radar) : reading;
+}
+/**
+ * The reading from the cache, else from the last-good store. Neither copy
+ * carries a radar claim: the claim is added by `getNow`, after this returns.
+ */
+async function readNow(coords, opts) {
     const { lat, lon } = coords;
     const now = opts.now ?? Date.now;
     const key = `${fmt(lat)},${fmt(lon)}`;
