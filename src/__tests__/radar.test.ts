@@ -1577,3 +1577,116 @@ describe("B-009 / B-011 — the frame window and the hold, at their edges", () =
     expect(s.radarCalls().length, "the success cleared the hold: a request is made").toBe(before + 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// B-013: a frame that ages out while the reading loads does not claim
+// ---------------------------------------------------------------------------
+
+/** A green frame 20 minutes less 1 s old at `t`: live when the radar is read, aged out 5 s later. */
+const greenJustLiveAt = (t: number) => ok(identify(["30 200 30 255"], [t - (20 * MIN - 1000)]));
+
+/**
+ * The radar is read with the clock as it stands at the start. `slowUrl` waits
+ * until that read has happened, then moves the clock by `advanceMs` and answers.
+ * Every other URL goes to `base`.
+ */
+function agingRouter(
+  base: { fetchImpl: FetchImpl; calls: string[] },
+  slowUrl: string,
+  clock: { at: number },
+  advanceMs: number,
+  radarReply: Reply,
+) {
+  const radarRead = { at: null as number | null };
+  const fetchImpl: FetchImpl = async (url, init) => {
+    if (isRadarCall(url)) {
+      base.calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          radarRead.at = clock.at;
+          return radarReply.body;
+        },
+      };
+    }
+    if (url === slowUrl) {
+      await until(() => radarRead.at !== null);
+      for (let i = 0; i < 50; i += 1) await Promise.resolve();
+      clock.at += advanceMs;
+    }
+    return base.fetchImpl(url, init);
+  };
+  return { fetchImpl, calls: base.calls, radarRead };
+}
+
+describe("B-013 — a frame that ages out while the reading loads does not claim", () => {
+  it("rainClaimFrom moves on past an aged-out frame: green 25 min old then green 15 min old claims the 15-minute frame", () => {
+    expect(
+      rainClaimFrom(
+        radarOf([
+          { at: NOW - 25 * MIN, intensity: "rain" },
+          { at: NOW - 15 * MIN, intensity: "rain" },
+        ]),
+        60,
+        NOW,
+      ),
+    ).toEqual({ intensity: "rain", at: NOW - 15 * MIN });
+  });
+
+  it("rainClaimFrom: green 25 min old then dry 2 min old claims nothing", () => {
+    expect(
+      rainClaimFrom(
+        radarOf([
+          { at: NOW - 25 * MIN, intensity: "rain" },
+          { at: NOW - 2 * MIN, intensity: "none" },
+        ]),
+        60,
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("getNow: a frame live when read, aged out when the reading has loaded 5 s later, does not claim", async () => {
+    const clock = { at: NOW };
+    const r = agingRouter(healthy(), OBS_KHPN, clock, 5000, greenJustLiveAt(NOW));
+    const n = await settle(getNow(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at, radar: true }));
+    expect(r.radarRead.at).toBe(NOW);
+    expect(clock.at).toBe(NOW + 5000);
+    expect(n).not.toBeNull();
+    expect(n!.condition).toBe("mostly-cloudy");
+    expect(n).not.toHaveProperty("rainSource");
+    expect(n).not.toHaveProperty("radarAt");
+  });
+
+  it("control: the same frame with the clock still at the start claims, stamped with its own time", async () => {
+    const clock = { at: NOW };
+    const r = agingRouter(healthy(), OBS_KHPN, clock, 0, greenJustLiveAt(NOW));
+    const n = await settle(getNow(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at, radar: true }));
+    expect(r.radarRead.at).toBe(NOW);
+    expect(n).toMatchObject({ condition: "light-rain", rainSource: "radar", radarAt: NOW - (20 * MIN - 1000) });
+  });
+
+  it("getDaily: a frame live when read, aged out when the forecast has loaded 5 s later, leaves today dry", async () => {
+    const clock = { at: DAY_AT };
+    const r = agingRouter(dailyRouter(), FORECAST_URL, clock, 5000, greenJustLiveAt(DAY_AT));
+    const out = await settle(getDaily(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at, radar: true }));
+    expect(r.radarRead.at).toBe(DAY_AT);
+    expect(clock.at).toBe(DAY_AT + 5000);
+    const today = out!.days.find((d) => d.date === VENUE_TODAY)!;
+    expect(today).not.toHaveProperty("rainSource");
+    expect(today).not.toHaveProperty("radarAt");
+    expect(today.dayCondition).toBe("mostly-cloudy");
+  });
+
+  it("control: the same frame with the clock still at the start makes today wet, stamped with its own time", async () => {
+    const clock = { at: DAY_AT };
+    const r = agingRouter(dailyRouter(), FORECAST_URL, clock, 0, greenJustLiveAt(DAY_AT));
+    const out = await settle(getDaily(COORDS, { fetchImpl: r.fetchImpl, now: () => clock.at, radar: true }));
+    expect(r.radarRead.at).toBe(DAY_AT);
+    expect(out!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({
+      rainSource: "radar",
+      dayCondition: "light-rain",
+    });
+  });
+});

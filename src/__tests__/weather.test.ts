@@ -350,3 +350,73 @@ describe("B-013 through getWeather: now and today take the clock of the call", (
     expect(feed.calls.filter(isRadar)).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// B-013 through getWeather: the clock is read when the claim is made, not at the start
+// ---------------------------------------------------------------------------
+
+/** A green newest frame whose validtime is `ageMs` before `t`, as a radar reply. */
+function greenFrameMsReply(t: number, ageMs: number) {
+  return ok({
+    value: "NoData",
+    properties: { Values: ["30 200 30 255"] },
+    catalogItems: { features: [{ attributes: { idp_validtime: t - ageMs } }] },
+  });
+}
+
+/**
+ * The radar is read with the clock at the start (a frame 20 minutes less 1 s old
+ * then). The hourly forecast waits until that read has happened, then moves the
+ * clock by `advanceMs` and answers. Every other URL is the healthy engine.
+ */
+function agingWeather(clock: { at: number }, advanceMs: number) {
+  const base = healthy({}, dryForecast());
+  const read = { at: null as number | null };
+  const radarReply = greenFrameMsReply(NOW, 20 * 60_000 - 1000);
+  const fetchImpl: FetchImpl = async (url, init) => {
+    if (isRadar(url)) {
+      base.calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          read.at = clock.at;
+          return radarReply.body;
+        },
+      };
+    }
+    if (url === HOURLY_URL) {
+      for (let i = 0; i < 500 && read.at === null; i += 1) await Promise.resolve();
+      for (let i = 0; i < 50; i += 1) await Promise.resolve();
+      clock.at += advanceMs;
+    }
+    return base.fetchImpl(url, init);
+  };
+  return { fetchImpl, calls: base.calls, read };
+}
+
+describe("B-013 through getWeather: a frame that ages out while the report loads", () => {
+  it("live when read, aged out 5 s later: now and today take no claim, and fetchedAt is the clock at the start", async () => {
+    const clock = { at: NOW };
+    const w = agingWeather(clock, 5000);
+    const out = (await getWeather(C, { fetchImpl: w.fetchImpl, now: () => clock.at }))!;
+    expect(w.read.at).toBe(NOW);
+    expect(clock.at).toBe(NOW + 5000);
+    expect(out.fetchedAt).toBe(NOW);
+    expect(out.now).not.toHaveProperty("rainSource");
+    expect(out.now).not.toHaveProperty("radarAt");
+    expect(out.daily!.days[0]).not.toHaveProperty("rainSource");
+    expect(out.daily!.days[0]).not.toHaveProperty("radarAt");
+    expect(isPrecipitation(out.daily!.days[0]!.dayCondition)).toBe(false);
+  });
+
+  it("control: the same frame with the clock still at the start makes now and today wet", async () => {
+    const clock = { at: NOW };
+    const w = agingWeather(clock, 0);
+    const out = (await getWeather(C, { fetchImpl: w.fetchImpl, now: () => clock.at }))!;
+    expect(w.read.at).toBe(NOW);
+    expect(out.fetchedAt).toBe(NOW);
+    expect(out.now).toMatchObject({ rainSource: "radar", radarAt: NOW - (20 * 60_000 - 1000) });
+    expect(out.daily!.days[0]).toMatchObject({ rainSource: "radar" });
+  });
+});
