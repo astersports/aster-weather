@@ -2,15 +2,46 @@
  * Internal helpers shared across the fetch modules.
  */
 import { FETCH_TIMEOUT_MS, FETCH_RETRY_COUNT, FETCH_RETRY_BACKOFF_MS, } from "./types.js";
+const realRetrySleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The retry backoff sleep. Replaced only by the test hook {@link setRetrySleep}. */
+let retrySleep = realRetrySleep;
+/**
+ * Test hook: replace the retry backoff sleep (pass null to restore the real one).
+ * Not exported from the package index.
+ */
+export function setRetrySleep(fn) {
+    retrySleep = fn ?? realRetrySleep;
+}
 /**
  * The resilience profile every loader's cache runs with (v0.5.0): one retry
  * (M5) + stale-while-revalidate (M6). Shared so all four loaders stay identical.
+ * The sleep reads the current {@link setRetrySleep} at call time.
  */
 export const RESILIENT_CACHE = {
     retries: FETCH_RETRY_COUNT,
     retryBackoffMs: FETCH_RETRY_BACKOFF_MS,
     swr: true,
+    sleep: (ms) => retrySleep(ms),
 };
+/**
+ * Call a consumer's error hook. A hook that throws, or returns a promise that
+ * rejects, never reaches the engine (CLAUDE.md §3 rule 6).
+ */
+export function safeReport(hook, err) {
+    if (!hook)
+        return;
+    try {
+        const result = hook(err);
+        if (typeof result === "object" &&
+            result !== null &&
+            typeof result.then === "function") {
+            result.then(undefined, () => { });
+        }
+    }
+    catch {
+        // The consumer's hook failed; the engine's answer is unchanged.
+    }
+}
 /**
  * Bind a loader's `{ call, lat, lon }` context onto the consumer's `onError`
  * hook (M1). Returns `undefined` when no hook was supplied, so the cache stays

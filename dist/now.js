@@ -8,19 +8,24 @@
  * Only an observed reading is written to the last-good store. Never throws.
  */
 import { WeatherCache } from "./cache.js";
-import { RESILIENT_CACHE, bindOnError, roundOrNull } from "./helpers.js";
+import { RESILIENT_CACHE, bindOnError, roundOrNull, safeReport } from "./helpers.js";
 import { FRESH_MS, MAX_AGE_MS } from "./provenance.js";
 import { readLastGood, writeLastGood } from "./store.js";
 import { conditionFromNwsIcon } from "./condition.js";
 import { cToF, kmhToMph, mmToIn, mToFt, mToMi, paToInHg } from "./units.js";
 import { getHourly } from "./nws/hourly.js";
-import { getPoint } from "./nws/point.js";
+import { lookupPoint } from "./nws/point.js";
 import { applyRadarToNow, startRadarRain } from "./radar.js";
 import { getLatestObservation, getStations, } from "./nws/observations.js";
 /** The longest age an observation may have and still be the current reading. */
 export const MAX_OBSERVATION_AGE_MS = 90 * 60_000;
 const STORE_PREFIX = "aw:now:";
-const nowCache = new WeatherCache(FRESH_MS.now, 200, RESILIENT_CACHE);
+// No retry here: the ladder's own fetches retry through their caches, so a
+// second pass of the whole ladder would report each inner failure twice (B-007).
+const nowCache = new WeatherCache(FRESH_MS.now, 200, {
+    ...RESILIENT_CACHE,
+    retries: 0,
+});
 /** At most four decimals, trailing zeros dropped: the same key as hourly. */
 const fmt = (v) => String(Number(v.toFixed(4)));
 /** Round to two decimals, keeping `null`. */
@@ -79,12 +84,17 @@ async function stationsOrNone(coords, opts) {
         return [];
     }
 }
-/** One station's observation, with a failure read as "no reading from this station". */
-async function observationOrNull(id, opts) {
+/**
+ * One station's observation. A failure is reported once through `onError` as
+ * `getLatestObservation` and read as "no reading from this station". A 404 is
+ * not a failure: `getLatestObservation` answers `null` and nothing is reported.
+ */
+async function observationOrNull(id, coords, opts) {
     try {
         return await getLatestObservation(id, opts);
     }
-    catch {
+    catch (err) {
+        safeReport(bindOnError(opts, "getLatestObservation", coords.lat, coords.lon), err);
         return null;
     }
 }
@@ -92,7 +102,7 @@ async function observationOrNull(id, opts) {
 async function load(coords, opts, now) {
     const stations = await stationsOrNone(coords, opts);
     for (const station of stations.slice(0, 2)) {
-        const obs = await observationOrNull(station.id, opts);
+        const obs = await observationOrNull(station.id, coords, opts);
         if (obs &&
             obs.temperatureC !== null &&
             now() - obs.at <= MAX_OBSERVATION_AGE_MS) {
@@ -110,19 +120,43 @@ async function load(coords, opts, now) {
  * Current conditions for a coordinate: a measured station reading when one is
  * fresh enough, else the official forecast hour containing now. `null` when the
  * point is outside NWS coverage (no `onError`), or no reading is usable (fresh,
- * stale inside its bound, or last-good in the store). Never throws.
+ * stale inside its bound, or last-good in the store). When the point lookup
+ * failed, the reading already in memory is returned under the same bound (B-015),
+ * else the stored last-good observed reading: no request, and no radar claim.
+ * Never throws.
  */
 export async function getNow(coords, opts = {}) {
-    const point = await getPoint(coords, opts);
-    if (!point)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
+    const now = opts.now ?? Date.now;
+    if (lookup.status === "failed")
+        return heldNow(coords, opts, now);
     // The radar, when asked, runs alongside the reading: started once the point is
     // known (so a point outside coverage asks nothing), before the reading loads.
     const radar = opts.radar === true ? startRadarRain(coords, opts) : null;
     const reading = await readNow(coords, opts);
     if (!reading)
         return null;
-    return radar ? applyRadarToNow(reading, await radar) : reading;
+    // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
+    return radar ? applyRadarToNow(reading, await radar, now()) : reading;
+}
+/**
+ * The failed-lookup path of `getNow`: the in-memory reading first (B-015), read with
+ * no request, no radar and no `onError` under the normal age bound, then the store.
+ */
+async function heldNow(coords, opts, now) {
+    const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
+    const held = nowCache.peek(key, MAX_AGE_MS.now, now);
+    if (held?.data)
+        return withStamp(held.data, held.fetchedAt, held.stale);
+    return readStoredNow(coords, opts, now);
+}
+/** The last-good reading from the store, marked stale, or `null` when none is usable. */
+async function readStoredNow(coords, opts, now) {
+    const storeKey = STORE_PREFIX + `${fmt(coords.lat)},${fmt(coords.lon)}`;
+    const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.now, now());
+    return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }
 /**
  * The reading from the cache, else from the last-good store. Neither copy

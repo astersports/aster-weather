@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getNowcast, clearNowcastCache, type FetchImpl } from "../index.js";
+import { setRetrySleep } from "../helpers.js";
 
 const COORDS = { lat: 41.13, lon: -73.72 };
 
@@ -17,6 +18,10 @@ function stubMinutely(startSec: number, count: number): FetchImpl {
     }),
   });
 }
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getNowcast (minutely_15 precipitation nowcast)", () => {
   beforeEach(() => clearNowcastCache());

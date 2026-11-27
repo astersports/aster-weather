@@ -24,6 +24,8 @@
  *    fallback — the single channel that makes an Open-Meteo outage observable.
  */
 
+import { safeReport } from "./helpers.js";
+
 /** Cache resilience behavior (M5 retry + M6 SWR), configured per cache instance. */
 export interface CacheBehavior {
   /** Retry the loader this many times before falling back to stale/empty. Default 0. */
@@ -34,6 +36,15 @@ export interface CacheBehavior {
   swr?: boolean;
   /** Injectable sleep (tests inject a controllable one). Default real `setTimeout`. */
   sleep?: (ms: number) => Promise<void>;
+}
+
+/** `freshFor` read from the value; a throw means the cache's own ttl (the engine never throws). */
+function freshOrTtl<T>(freshFor: (data: T) => number, data: T, ttlMs: number): number {
+  try {
+    return freshFor(data);
+  } catch {
+    return ttlMs;
+  }
 }
 
 const realSleep = (ms: number): Promise<void> =>
@@ -106,7 +117,7 @@ export class WeatherCache<T> {
       try {
         return (await this.runWithRetry(key, loader)).data;
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
         // Stale-on-error: last-known-good if present (timestamp NOT refreshed,
         // so the entry stays expired and the next call retries), else empty.
         return cached?.data ?? empty;
@@ -135,6 +146,10 @@ export class WeatherCache<T> {
    * shown as fresh. Never throws.
    *
    * `now` supplies the clock for both age checks and fetch times.
+   *
+   * `freshFor`, when given, reads how long a cached value stays fresh, from the
+   * value itself. The result is capped by the cache's own TTL, so it can only
+   * shorten freshness. Without it the TTL alone decides.
    */
   async getWithMeta(
     key: string,
@@ -143,9 +158,12 @@ export class WeatherCache<T> {
     onError?: (err: unknown) => void,
     maxStaleMs: number = Infinity,
     now: () => number = Date.now,
+    freshFor?: (data: T) => number,
   ): Promise<CacheMeta<T>> {
     const cached = this.store.get(key);
-    if (cached && now() - cached.fetchedAt < this.ttlMs) {
+    const freshMs =
+      cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
+    if (cached && now() - cached.fetchedAt < freshMs) {
       // LRU touch, as in get().
       this.store.delete(key);
       this.store.set(key, cached);
@@ -160,7 +178,7 @@ export class WeatherCache<T> {
         const fetched = await this.runWithRetry(key, loader, now);
         return { data: fetched.data, fetchedAt: fetched.at, stale: false };
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
         // Read the store now, not the value captured before the fetch.
         const entry = this.store.get(key);
         if (entry) {
@@ -177,6 +195,32 @@ export class WeatherCache<T> {
 
     this.metaInflight.set(key, job);
     return job;
+  }
+
+  /**
+   * Read a cached entry without loading anything. A fresh entry comes back
+   * `stale: false`; an entry past its freshness but no older than `maxStaleMs`
+   * comes back `stale: true`, with its original `fetchedAt`; no entry, or an older
+   * one, is `null`. Never calls a loader, never reports, never waits, and never
+   * changes the cache.
+   *
+   * Freshness is decided as in `getWithMeta`: the cache's ttl, shortened by
+   * `freshFor` when given (a throw falls back to the ttl).
+   */
+  peek(
+    key: string,
+    maxStaleMs: number = Infinity,
+    now: () => number = Date.now,
+    freshFor?: (data: T) => number,
+  ): CacheMeta<T> | null {
+    const cached = this.store.get(key);
+    if (!cached) return null;
+    const freshMs =
+      freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
+    const age = now() - cached.fetchedAt;
+    if (age < freshMs) return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
+    if (age <= maxStaleMs) return { data: cached.data, fetchedAt: cached.fetchedAt, stale: true };
+    return null;
   }
 
   /**
@@ -224,7 +268,7 @@ export class WeatherCache<T> {
       try {
         await this.runWithRetry(key, loader);
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
       } finally {
         this.refreshing.delete(key);
       }

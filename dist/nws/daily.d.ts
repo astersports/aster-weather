@@ -19,7 +19,10 @@ export interface DailyResult {
 /**
  * The seven-day forecast for a coordinate, one reading per date, or `null`
  * when the point is outside coverage or no reading is usable (fresh, stale
- * inside its bound, or last-good in the store). Never throws.
+ * inside its bound, or last-good in the store). When the point lookup failed,
+ * the forecast already in memory is returned under the same bound (B-015), else
+ * the stored last-good forecast: no request, and no radar (there is no time zone
+ * to place today). Never throws.
  */
 export declare function getDaily(coords: Coords, opts?: EngineOptions): Promise<DailyResult | null>;
 /** Test hook: clear every cached daily forecast. */

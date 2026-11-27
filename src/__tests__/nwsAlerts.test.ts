@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getAlerts, clearAlertsCache, type WeatherAlert } from "../nws/alerts.js";
 import { clearPointCache } from "../nws/point.js";
+import { setRetrySleep } from "../helpers.js";
 import { NWS_API } from "../nws/http.js";
 import type { FetchImpl, WeatherErrorContext } from "../types.js";
 
@@ -273,5 +274,31 @@ describe("getAlerts — failures", () => {
     expect(await getAlerts(COORDS, { fetchImpl, onError, now: () => T0 })).toBeNull();
     expect(onError).not.toHaveBeenCalled();
     expect(calls).toEqual([POINTS_URL]);
+  });
+});
+
+describe("getAlerts — a failed point lookup still asks for the alerts", () => {
+  beforeEach(() => setRetrySleep(async () => {}));
+  afterEach(() => setRetrySleep(null));
+
+  it("points 500: the alerts are still asked by coordinate and returned", async () => {
+    const healthyRun = router(okRoutes());
+    const expected = await getAlerts(COORDS, { fetchImpl: healthyRun.fetchImpl, now: () => T0 });
+    expect(expected!.length).toBeGreaterThan(0);
+    clearAlertsCache();
+    clearPointCache();
+
+    const r = router({ ...okRoutes(), [POINTS_URL]: { status: 500, body: {} } });
+    const onError = vi.fn();
+    const got = await getAlerts(COORDS, { fetchImpl: r.fetchImpl, now: () => T0, onError });
+    expect(got).toEqual(expected);
+    expect(r.calls.filter((u) => u === ALERTS_URL)).toHaveLength(1);
+    expect(onError.mock.calls.map((c) => (c[1] as { call: string }).call)).toEqual(["getPoint"]);
+  });
+
+  it("points 404: null, and no alerts request", async () => {
+    const r = router({ ...okRoutes(), [POINTS_URL]: { status: 404, body: {} } });
+    expect(await getAlerts(COORDS, { fetchImpl: r.fetchImpl, now: () => T0 })).toBeNull();
+    expect(r.calls.filter((u) => u === ALERTS_URL)).toHaveLength(0);
   });
 });

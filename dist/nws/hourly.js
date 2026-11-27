@@ -11,9 +11,11 @@ import { readLastGood, writeLastGood } from "../store.js";
 import { conditionFromNwsIcon } from "../condition.js";
 import { cToF, kmhToMph, mmToIn, mToMi } from "../units.js";
 import { getGrid, gridValueAt } from "./grid.js";
-import { getPoint } from "./point.js";
+import { lookupPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 const STORE_PREFIX = "aw:hourly:";
+/** How long an hourly load without its grid is kept before the grid is asked again (B-003). */
+export const GRID_RETRY_AFTER_MS = 5 * 60_000;
 const hourlyCache = new WeatherCache(FRESH_MS.hourly, 200, RESILIENT_CACHE);
 /** At most four decimals, trailing zeros dropped: the same key as the point cache. */
 const fmt = (v) => String(Number(v.toFixed(4)));
@@ -104,6 +106,7 @@ async function fetchHourly(coords, first, opts, now) {
         rain: amounts(layers, "quantitativePrecipitation"),
         snow: amounts(layers, "snowfallAmount"),
         ice: amounts(layers, "iceAccumulation"),
+        gridAvailable: layers !== null,
     };
 }
 function withStamp(b, fetchedAt, stale) {
@@ -114,28 +117,54 @@ function withStamp(b, fetchedAt, stale) {
         rain: b.rain,
         snow: b.snow,
         ice: b.ice,
+        // A body stored before this field existed reads as no grid: its grid may be missing.
+        gridAvailable: b.gridAvailable === true,
     };
 }
 /**
  * The hourly forecast for a coordinate, joined with the grid, or `null` when
  * the point is outside coverage or no reading is usable (fresh, stale inside
- * its bound, or last-good in the store). Never throws.
+ * its bound, or last-good in the store). When the point lookup failed, the reading
+ * already in memory is returned under the same bound (B-015), else the stored
+ * last-good reading: no request, no grid. Never throws.
  */
 export async function getHourly(coords, opts = {}) {
     const { lat, lon } = coords;
-    const point = await getPoint(coords, opts);
-    if (!point)
+    const lookup = await lookupPoint(coords, opts);
+    if (lookup.status === "outside")
         return null;
     const now = opts.now ?? Date.now;
     const key = `${fmt(lat)},${fmt(lon)}`;
     const storeKey = STORE_PREFIX + key;
+    if (lookup.status === "failed")
+        return heldHourly(key, storeKey, opts, now);
+    const point = lookup.point;
     const meta = await hourlyCache.getWithMeta(key, async () => {
         const body = await fetchHourly(coords, point, opts, now);
         writeLastGood(opts.store, storeKey, body, now());
         return body;
-    }, null, bindOnError(opts, "getHourly", lat, lon), MAX_AGE_MS.hourly, now);
+    }, null, bindOnError(opts, "getHourly", lat, lon), MAX_AGE_MS.hourly, now, hourlyFreshFor);
     if (meta.data)
         return withStamp(meta.data, meta.fetchedAt, meta.stale);
+    return storedHourly(storeKey, opts, now);
+}
+/** How long a cached hourly body stays fresh: a load without its grid, five minutes (B-003). */
+function hourlyFreshFor(body) {
+    return body && !body.gridAvailable ? GRID_RETRY_AFTER_MS : FRESH_MS.hourly;
+}
+/**
+ * The failed-lookup path: the in-memory reading first (B-015), read with no request
+ * and no `onError`, under the same freshness and age bound as the normal path. Only
+ * when nothing usable is in memory does it read the last-good store.
+ */
+async function heldHourly(key, storeKey, opts, now) {
+    const held = hourlyCache.peek(key, MAX_AGE_MS.hourly, now, hourlyFreshFor);
+    if (held?.data)
+        return withStamp(held.data, held.fetchedAt, held.stale);
+    return storedHourly(storeKey, opts, now);
+}
+/** The last-good hourly reading from the store, marked stale, or `null` when none is usable. */
+async function storedHourly(storeKey, opts, now) {
     const last = await readLastGood(opts.store, storeKey, MAX_AGE_MS.hourly, now());
     return last ? withStamp(last.data, last.fetchedAt, true) : null;
 }

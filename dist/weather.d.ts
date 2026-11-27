@@ -30,10 +30,13 @@ export interface WeatherReport {
     fetchedAt: number;
 }
 /**
- * Every part of the engine for a coordinate, or `null` when the point is invalid,
- * outside NWS coverage (404), or its lookup failed. In those cases no other request
- * is made. Radar is asked once unless `radar: false`. No `onError` of its own; a
- * failing part reports through its own loader. Never throws.
+ * Every part of the engine for a coordinate, or `null` when the point is invalid
+ * or outside NWS coverage (404). Those cases make no other request. When the
+ * point lookup failed, the report still comes: the place has no time zone, city
+ * or state, the sun is `null`, and the forecast parts come from their stores
+ * (or `null`). Alerts and radar are asked as usual. Radar is asked once unless
+ * `radar: false`. No `onError` of its own; a failing part reports through its own
+ * loader, and a failed point lookup reports once through `getPoint`. Never throws.
  */
 export declare function getWeather(coords: Coords, opts?: EngineOptions): Promise<WeatherReport | null>;
 //# sourceMappingURL=weather.d.ts.map

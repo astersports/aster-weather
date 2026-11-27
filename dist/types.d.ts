@@ -168,7 +168,7 @@ export type FetchImpl = (url: string, init?: {
     json: () => Promise<unknown>;
 }>;
 /** Which loader an {@link WeatherErrorContext} came from. */
-export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast" | "getPoint" | "getHourly" | "getGrid" | "getDaily" | "getNow" | "getAlerts" | "getRadarRain";
+export type WeatherCall = "fetchForecast" | "getCurrentWeather" | "getDailyForecast" | "getNowcast" | "getPoint" | "getHourly" | "getGrid" | "getDaily" | "getNow" | "getAlerts" | "getRadarRain" | "getStations" | "getLatestObservation";
 /**
  * Context passed to {@link FetchOptions.onError} so a consumer can tag the
  * failure by call + venue when routing it into its own tracker.

@@ -24,6 +24,24 @@ export interface RadarRain {
     bridgeFrames: RadarFrame[];
 }
 /**
+ * A radar frame's own age limit, measured from `now`. A frame older than this
+ * is ignored everywhere: it cannot claim rain, and it is not "dry" either. The
+ * same value bounds the "recent" window. Frames dated after `now` are kept, since
+ * a device clock may run behind the radar's.
+ *
+ * The rule for a rain claim (B-013): radar never claims rain from a frame more
+ * than this old at the moment the claim is made. A radar answer is cached, so the
+ * age is checked again in `rainClaimFrom` with the caller's clock, not only when
+ * the radar was read.
+ */
+export declare const MAX_FRAME_AGE_MS: number;
+/**
+ * After a radar read ultimately fails for a coordinate, the radar is not asked
+ * again for that coordinate until this much time has passed (measured with
+ * `opts.now`). Calls inside the hold make no request and no `onError`.
+ */
+export declare const RADAR_RETRY_AFTER_MS = 60000;
+/**
  * Classify one rendered pixel by hue family. Accepts both separators the
  * service emits (space-separated frames, comma-separated `value`) and its
  * literal "NoData".
@@ -35,13 +53,17 @@ export declare function classifyEcho(pixel: string): EchoIntensity;
  * numeric time is skipped. A pixel that is not a string is `unknown-echo`.
  */
 export declare function parseRadarFrames(data: unknown): RadarFrame[];
-/** The radar's answer from its frames, or `null` when there are none (no frames is no answer, never dry). */
-export declare function resolveRadar(frames: RadarFrame[], now: number): RadarRain | null;
-/** Radar intensity to a `Condition`. Radar cannot tell rain from snow, so at or below 34 F the family is snow. */
-export declare function radarWmoCode(intensity: EchoIntensity, temperatureF: number | null): number;
 /**
- * The condition a radar claim writes. Light showers become `light-rain`,
- * heavier becomes `rain`, storms become `thunderstorm`, and freezing becomes snow.
+ * The radar's answer from its frames, or `null` when none is usable. Frames older
+ * than `MAX_FRAME_AGE_MS` are ignored, so a stalled radar that serves only old
+ * frames answers `null` (no answer, never dry). The answer is computed from the
+ * frames that remain.
+ */
+export declare function resolveRadar(frames: RadarFrame[], now: number): RadarRain | null;
+/**
+ * Radar intensity to a `Condition`. Radar cannot tell rain from snow, so at or
+ * below 34 F the family is snow. Light showers become `light-rain`, heavier
+ * `rain`, storms `thunderstorm`. Only `heavy` and `storm` freeze to `snow`.
  */
 export declare function radarCondition(intensity: EchoIntensity, temperatureF: number | null): Condition;
 /** Surface relative humidity at or above which blue echo means arriving rain, not virga. */
@@ -59,12 +81,15 @@ export interface RainClaim {
  * reading and the daily cell, so they cannot disagree about the same sky.
  *
  * - Only the two newest frames count.
+ * - When `now` is given, a frame more than `MAX_FRAME_AGE_MS` older than `now`
+ *   cannot claim; the search moves on to the next bridge frame (B-013). Without
+ *   `now`, frames are not age-checked here (the read has already dropped old ones).
  * - `rain`, `heavy` and `storm` always claim.
  * - `light` claims only when humidity is at or above `SATURATED_HUMIDITY`.
  *   Absent humidity (`null` or `undefined`) means it does not claim.
  * - `unknown-echo` and `none` never claim.
  */
-export declare function rainClaimFrom(radar: RadarRain | null | undefined, humidity: number | null | undefined): RainClaim | null;
+export declare function rainClaimFrom(radar: RadarRain | null | undefined, humidity: number | null | undefined, now?: number): RainClaim | null;
 /**
  * The radar's own budget for one request, in ms. The parish port asks once with
  * this budget. A hung service costs one budget, not a retry on top of it.
@@ -80,7 +105,10 @@ export declare function radarTimeoutMs(callerMs: number | undefined): number;
 /**
  * Radar rain at a point, or `null` when the radar cannot answer (invalid
  * coordinates, fetch failure, or no usable frames). A failed refresh serves the
- * last answer for up to `MAX_AGE_MS.radar`. Never throws.
+ * last answer for up to `MAX_AGE_MS.radar`. After a failed read, the coordinate
+ * is held for `RADAR_RETRY_AFTER_MS`: calls inside the hold make no request and
+ * no `onError`, and serve the last answer under the same `MAX_AGE_MS.radar`
+ * bound, else `null`. Never throws.
  */
 export declare function getRadarRain(coords: Coords, opts?: EngineOptions): Promise<RadarRain | null>;
 /**
@@ -93,14 +121,14 @@ export declare function startRadarRain(coords: Coords, opts?: EngineOptions): Pr
  * the reading is dry and the radar claims rain. Never removes precipitation
  * and never changes any field other than `condition`, `rainSource` and `radarAt`.
  */
-export declare function applyRadarToNow(reading: NowReading, radar: RadarRain | null): NowReading;
+export declare function applyRadarToNow(reading: NowReading, radar: RadarRain | null, now?: number): NowReading;
 /**
  * Add a radar rain claim to today's daily cell. Only the entry whose `date` is
  * `today` can change. A dry day gets the claim on `dayCondition`, or on
  * `nightCondition` when there is no day condition. The daily path has no
  * humidity, so blue echo never claims here. Other days are untouched.
  */
-export declare function applyRadarToToday(days: DayReading[], radar: RadarRain | null, today: string): DayReading[];
-/** Test hook: clear every cached radar answer. */
+export declare function applyRadarToToday(days: DayReading[], radar: RadarRain | null, today: string, now?: number): DayReading[];
+/** Test hook: clear every cached radar answer and every hold. */
 export declare function clearRadarCache(): void;
 //# sourceMappingURL=radar.d.ts.map

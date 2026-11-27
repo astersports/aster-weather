@@ -10,7 +10,7 @@ import { readLastGood, writeLastGood } from "../store.js";
 import { conditionFromNwsIcon, type Condition } from "../condition.js";
 import { cToF } from "../units.js";
 import type { Coords } from "../types.js";
-import { getPoint, type NwsPoint } from "./point.js";
+import { lookupPoint, type NwsPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 import { applyRadarToToday, startRadarRain } from "../radar.js";
 import { localDay } from "../localDay.js";
@@ -167,15 +167,20 @@ function withStamp(b: DailyBody, fetchedAt: number, stale: boolean): DailyResult
 /**
  * The seven-day forecast for a coordinate, one reading per date, or `null`
  * when the point is outside coverage or no reading is usable (fresh, stale
- * inside its bound, or last-good in the store). Never throws.
+ * inside its bound, or last-good in the store). When the point lookup failed,
+ * the forecast already in memory is returned under the same bound (B-015), else
+ * the stored last-good forecast: no request, and no radar (there is no time zone
+ * to place today). Never throws.
  */
 export async function getDaily(
   coords: Coords,
   opts: EngineOptions = {},
 ): Promise<DailyResult | null> {
-  const point = await getPoint(coords, opts);
-  if (!point) return null;
+  const lookup = await lookupPoint(coords, opts);
+  if (lookup.status === "outside") return null;
   const now = opts.now ?? Date.now;
+  if (lookup.status === "failed") return heldDaily(coords, opts, now);
+  const point = lookup.point;
   // The radar, when asked, runs alongside the reading. It is for today's cell, so
   // it starts only with a usable time zone: today is the venue's date for now().
   const today = opts.radar === true && point.timeZone !== null ? localDay(now(), point.timeZone) : null;
@@ -183,7 +188,8 @@ export async function getDaily(
   const result = await readDaily(coords, point, opts, now);
   if (!result) return null;
   if (radar === null || today === null) return result;
-  return { ...result, days: applyRadarToToday(result.days, await radar, today) };
+  // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
+  return { ...result, days: applyRadarToToday(result.days, await radar, today, now()) };
 }
 
 /**
@@ -214,8 +220,32 @@ async function readDaily(
   );
   if (meta.data) return withStamp(meta.data, meta.fetchedAt, meta.stale);
 
+  return readStoredDaily(storeKey, opts, now);
+}
+
+/** The last-good forecast from the store, marked stale, or `null` when none is usable. */
+async function readStoredDaily(
+  storeKey: string,
+  opts: EngineOptions,
+  now: () => number,
+): Promise<DailyResult | null> {
   const last = await readLastGood<DailyBody>(opts.store, storeKey, MAX_AGE_MS.daily, now());
   return last ? withStamp(last.data, last.fetchedAt, true) : null;
+}
+
+/**
+ * The failed-lookup path of `getDaily`: the in-memory forecast first (B-015), read
+ * with no request and no `onError` under the normal age bound, then the store.
+ */
+async function heldDaily(
+  coords: Coords,
+  opts: EngineOptions,
+  now: () => number,
+): Promise<DailyResult | null> {
+  const key = `${fmt(coords.lat)},${fmt(coords.lon)}`;
+  const held = dailyCache.peek(key, MAX_AGE_MS.daily, now);
+  if (held?.data) return withStamp(held.data, held.fetchedAt, held.stale);
+  return readStoredDaily(STORE_PREFIX + key, opts, now);
 }
 
 /** Test hook: clear every cached daily forecast. */

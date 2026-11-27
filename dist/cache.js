@@ -23,6 +23,16 @@
  *    fetch ultimately fails (after retries), immediately before the stale/empty
  *    fallback — the single channel that makes an Open-Meteo outage observable.
  */
+import { safeReport } from "./helpers.js";
+/** `freshFor` read from the value; a throw means the cache's own ttl (the engine never throws). */
+function freshOrTtl(freshFor, data, ttlMs) {
+    try {
+        return freshFor(data);
+    }
+    catch {
+        return ttlMs;
+    }
+}
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export class WeatherCache {
     constructor(ttlMs, maxEntries = 200, behavior = {}) {
@@ -69,7 +79,7 @@ export class WeatherCache {
                 return (await this.runWithRetry(key, loader)).data;
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
                 // Stale-on-error: last-known-good if present (timestamp NOT refreshed,
                 // so the entry stays expired and the next call retries), else empty.
                 return cached?.data ?? empty;
@@ -97,10 +107,15 @@ export class WeatherCache {
      * shown as fresh. Never throws.
      *
      * `now` supplies the clock for both age checks and fetch times.
+     *
+     * `freshFor`, when given, reads how long a cached value stays fresh, from the
+     * value itself. The result is capped by the cache's own TTL, so it can only
+     * shorten freshness. Without it the TTL alone decides.
      */
-    async getWithMeta(key, loader, empty, onError, maxStaleMs = Infinity, now = Date.now) {
+    async getWithMeta(key, loader, empty, onError, maxStaleMs = Infinity, now = Date.now, freshFor) {
         const cached = this.store.get(key);
-        if (cached && now() - cached.fetchedAt < this.ttlMs) {
+        const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
+        if (cached && now() - cached.fetchedAt < freshMs) {
             // LRU touch, as in get().
             this.store.delete(key);
             this.store.set(key, cached);
@@ -115,7 +130,7 @@ export class WeatherCache {
                 return { data: fetched.data, fetchedAt: fetched.at, stale: false };
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
                 // Read the store now, not the value captured before the fetch.
                 const entry = this.store.get(key);
                 if (entry) {
@@ -132,6 +147,28 @@ export class WeatherCache {
         })();
         this.metaInflight.set(key, job);
         return job;
+    }
+    /**
+     * Read a cached entry without loading anything. A fresh entry comes back
+     * `stale: false`; an entry past its freshness but no older than `maxStaleMs`
+     * comes back `stale: true`, with its original `fetchedAt`; no entry, or an older
+     * one, is `null`. Never calls a loader, never reports, never waits, and never
+     * changes the cache.
+     *
+     * Freshness is decided as in `getWithMeta`: the cache's ttl, shortened by
+     * `freshFor` when given (a throw falls back to the ttl).
+     */
+    peek(key, maxStaleMs = Infinity, now = Date.now, freshFor) {
+        const cached = this.store.get(key);
+        if (!cached)
+            return null;
+        const freshMs = freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
+        const age = now() - cached.fetchedAt;
+        if (age < freshMs)
+            return { data: cached.data, fetchedAt: cached.fetchedAt, stale: false };
+        if (age <= maxStaleMs)
+            return { data: cached.data, fetchedAt: cached.fetchedAt, stale: true };
+        return null;
     }
     /**
      * Run `loader` with bounded retry. On success, caches + returns the value and
@@ -172,7 +209,7 @@ export class WeatherCache {
                 await this.runWithRetry(key, loader);
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
             }
             finally {
                 this.refreshing.delete(key);

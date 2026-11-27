@@ -17,9 +17,27 @@ import { bindOnError, coordKey, isValidCoord } from "./helpers.js";
 import { FRESH_MS, MAX_AGE_MS } from "./provenance.js";
 import { NOAA_MAPS, nwsJson } from "./nws/http.js";
 import { isPrecipitation } from "./condition.js";
-import { WMO_CODES } from "./wmo.js";
 const IDENTIFY_URL = `${NOAA_MAPS}/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer/identify`;
-const RECENT_WINDOW_MS = 20 * 60_000;
+/**
+ * A radar frame's own age limit, measured from `now`. A frame older than this
+ * is ignored everywhere: it cannot claim rain, and it is not "dry" either. The
+ * same value bounds the "recent" window. Frames dated after `now` are kept, since
+ * a device clock may run behind the radar's.
+ *
+ * The rule for a rain claim (B-013): radar never claims rain from a frame more
+ * than this old at the moment the claim is made. A radar answer is cached, so the
+ * age is checked again in `rainClaimFrom` with the caller's clock, not only when
+ * the radar was read.
+ */
+export const MAX_FRAME_AGE_MS = 20 * 60_000;
+/**
+ * After a radar read ultimately fails for a coordinate, the radar is not asked
+ * again for that coordinate until this much time has passed (measured with
+ * `opts.now`). Calls inside the hold make no request and no `onError`.
+ */
+export const RADAR_RETRY_AFTER_MS = 60_000;
+/** Holds kept at most, oldest dropped first. */
+const RADAR_HOLD_LIMIT = 200;
 /** Intensities at or above the unconditional rain floor. */
 const RAIN_FLOOR = new Set(["rain", "heavy", "storm"]);
 /**
@@ -89,42 +107,46 @@ export function parseRadarFrames(data) {
     }
     return frames.sort((x, y) => x.at - y.at);
 }
-/** The radar's answer from its frames, or `null` when there are none (no frames is no answer, never dry). */
+/** True when a frame is older than `MAX_FRAME_AGE_MS` at `now`. Future frames are not old. */
+function frameTooOld(frame, now) {
+    return now - frame.at > MAX_FRAME_AGE_MS;
+}
+/**
+ * The radar's answer from its frames, or `null` when none is usable. Frames older
+ * than `MAX_FRAME_AGE_MS` are ignored, so a stalled radar that serves only old
+ * frames answers `null` (no answer, never dry). The answer is computed from the
+ * frames that remain.
+ */
 export function resolveRadar(frames, now) {
-    if (frames.length === 0)
+    const live = frames.filter((f) => !frameTooOld(f, now));
+    if (live.length === 0)
         return null;
-    const latest = frames[frames.length - 1];
-    const recent = frames.filter((f) => now - f.at <= RECENT_WINDOW_MS);
+    const latest = live[live.length - 1];
     return {
         rainingNow: RAIN_FLOOR.has(latest.intensity),
-        recentRain: recent.some((f) => RAIN_FLOOR.has(f.intensity)),
+        recentRain: live.some((f) => RAIN_FLOOR.has(f.intensity)),
         intensity: latest.intensity,
         latestFrameAt: latest.at,
         checkedAt: now,
-        // The two newest, newest first, so the claim search reads in preference order.
-        bridgeFrames: frames.slice(-2).reverse(),
+        // The two newest live frames, newest first, so the claim search reads in preference order.
+        bridgeFrames: live.slice(-2).reverse(),
     };
 }
-/** Radar intensity to a `Condition`. Radar cannot tell rain from snow, so at or below 34 F the family is snow. */
-export function radarWmoCode(intensity, temperatureF) {
-    const freezing = temperatureF !== null && temperatureF <= 34;
-    if (freezing)
-        return intensity === "heavy" || intensity === "storm" ? 73 : 71;
-    if (intensity === "storm")
-        return 95;
-    if (intensity === "heavy")
-        return 81;
-    // Blue echo in saturated air is stratiform: slight rain, not a shower.
-    if (intensity === "light")
-        return 61;
-    return 80;
-}
 /**
- * The condition a radar claim writes. Light showers become `light-rain`,
- * heavier becomes `rain`, storms become `thunderstorm`, and freezing becomes snow.
+ * Radar intensity to a `Condition`. Radar cannot tell rain from snow, so at or
+ * below 34 F the family is snow. Light showers become `light-rain`, heavier
+ * `rain`, storms `thunderstorm`. Only `heavy` and `storm` freeze to `snow`.
  */
 export function radarCondition(intensity, temperatureF) {
-    return WMO_CODES[radarWmoCode(intensity, temperatureF)].icon;
+    const freezing = temperatureF !== null && temperatureF <= 34;
+    if (freezing)
+        return intensity === "heavy" || intensity === "storm" ? "snow" : "light-snow";
+    if (intensity === "storm")
+        return "thunderstorm";
+    if (intensity === "heavy")
+        return "rain";
+    // Blue echo in saturated air is stratiform: slight rain, not a shower.
+    return "light-rain";
 }
 /** Surface relative humidity at or above which blue echo means arriving rain, not virga. */
 export const SATURATED_HUMIDITY = 95;
@@ -135,16 +157,21 @@ export const BRIDGE_FRAMES = 2;
  * reading and the daily cell, so they cannot disagree about the same sky.
  *
  * - Only the two newest frames count.
+ * - When `now` is given, a frame more than `MAX_FRAME_AGE_MS` older than `now`
+ *   cannot claim; the search moves on to the next bridge frame (B-013). Without
+ *   `now`, frames are not age-checked here (the read has already dropped old ones).
  * - `rain`, `heavy` and `storm` always claim.
  * - `light` claims only when humidity is at or above `SATURATED_HUMIDITY`.
  *   Absent humidity (`null` or `undefined`) means it does not claim.
  * - `unknown-echo` and `none` never claim.
  */
-export function rainClaimFrom(radar, humidity) {
+export function rainClaimFrom(radar, humidity, now) {
     if (!radar)
         return null;
     const saturated = typeof humidity === "number" && humidity >= SATURATED_HUMIDITY;
     for (const frame of (radar.bridgeFrames ?? []).slice(0, BRIDGE_FRAMES)) {
+        if (now !== undefined && frameTooOld(frame, now))
+            continue;
         if (RAIN_FLOOR.has(frame.intensity))
             return { intensity: frame.intensity, at: frame.at };
         if (frame.intensity === "light" && saturated)
@@ -186,24 +213,63 @@ function identifyUrl(lat, lon) {
     return `${IDENTIFY_URL}?${params.toString()}`;
 }
 /**
+ * Coordinate key to the time its last radar read failed. While a hold is in
+ * force, that coordinate makes no radar request and no `onError`. A successful
+ * read clears it. Bounded by `RADAR_HOLD_LIMIT`.
+ */
+const radarHolds = new Map();
+function setRadarHold(key, failedAt) {
+    radarHolds.delete(key);
+    radarHolds.set(key, failedAt);
+    while (radarHolds.size > RADAR_HOLD_LIMIT) {
+        const oldest = radarHolds.keys().next();
+        if (oldest.done)
+            break;
+        radarHolds.delete(oldest.value);
+    }
+}
+/**
  * Radar rain at a point, or `null` when the radar cannot answer (invalid
  * coordinates, fetch failure, or no usable frames). A failed refresh serves the
- * last answer for up to `MAX_AGE_MS.radar`. Never throws.
+ * last answer for up to `MAX_AGE_MS.radar`. After a failed read, the coordinate
+ * is held for `RADAR_RETRY_AFTER_MS`: calls inside the hold make no request and
+ * no `onError`, and serve the last answer under the same `MAX_AGE_MS.radar`
+ * bound, else `null`. Never throws.
  */
 export async function getRadarRain(coords, opts = {}) {
     const { lat, lon } = coords;
     if (!isValidCoord(lat, lon))
         return null;
     const now = opts.now ?? Date.now;
-    const meta = await radarCache.getWithMeta(coordKey(lat, lon), async () => {
-        const data = await nwsJson(identifyUrl(lat, lon), {
-            ...opts,
-            timeoutMs: radarTimeoutMs(opts.timeoutMs),
-        });
-        const result = resolveRadar(parseRadarFrames(data), now());
-        if (!result)
-            throw new Error("radar: no usable frames");
-        return result;
+    const key = coordKey(lat, lon);
+    // In force only while the clock is at or after the failure and less than the limit past it:
+    // a clock that stepped back is not held (B-016).
+    const heldAt = radarHolds.get(key);
+    const elapsed = heldAt === undefined ? NaN : now() - heldAt;
+    if (elapsed >= 0 && elapsed < RADAR_RETRY_AFTER_MS) {
+        // The loader throws at once, so no request is made, and no onError is given.
+        // The result is the stored answer if it is still inside MAX_AGE_MS.radar, else null.
+        const held = await radarCache.getWithMeta(key, async () => {
+            throw new Error("radar: held after a failed read");
+        }, null, undefined, MAX_AGE_MS.radar, now);
+        return held.data;
+    }
+    const meta = await radarCache.getWithMeta(key, async () => {
+        try {
+            const data = await nwsJson(identifyUrl(lat, lon), {
+                ...opts,
+                timeoutMs: radarTimeoutMs(opts.timeoutMs),
+            });
+            const result = resolveRadar(parseRadarFrames(data), now());
+            if (!result)
+                throw new Error("radar: no usable frames");
+            radarHolds.delete(key);
+            return result;
+        }
+        catch (err) {
+            setRadarHold(key, now());
+            throw err;
+        }
     }, null, bindOnError(opts, "getRadarRain", lat, lon), MAX_AGE_MS.radar, now);
     return meta.data;
 }
@@ -219,12 +285,12 @@ export function startRadarRain(coords, opts = {}) {
  * the reading is dry and the radar claims rain. Never removes precipitation
  * and never changes any field other than `condition`, `rainSource` and `radarAt`.
  */
-export function applyRadarToNow(reading, radar) {
+export function applyRadarToNow(reading, radar, now) {
     if (!radar)
         return reading;
     if (isPrecipitation(reading.condition))
         return reading;
-    const claim = rainClaimFrom(radar, reading.humidity);
+    const claim = rainClaimFrom(radar, reading.humidity, now);
     if (!claim)
         return reading;
     return {
@@ -240,7 +306,7 @@ export function applyRadarToNow(reading, radar) {
  * `nightCondition` when there is no day condition. The daily path has no
  * humidity, so blue echo never claims here. Other days are untouched.
  */
-export function applyRadarToToday(days, radar, today) {
+export function applyRadarToToday(days, radar, today, now) {
     if (!radar)
         return days;
     const index = days.findIndex((d) => d.date === today);
@@ -249,7 +315,7 @@ export function applyRadarToToday(days, radar, today) {
     const day = days[index];
     if (isPrecipitation(day.dayCondition) || isPrecipitation(day.nightCondition))
         return days;
-    const claim = rainClaimFrom(radar, null);
+    const claim = rainClaimFrom(radar, null, now);
     if (!claim)
         return days;
     const condition = radarCondition(claim.intensity, day.high);
@@ -258,8 +324,9 @@ export function applyRadarToToday(days, radar, today) {
         : { ...day, nightCondition: condition, rainSource: "radar" };
     return days.map((d, i) => (i === index ? updated : d));
 }
-/** Test hook: clear every cached radar answer. */
+/** Test hook: clear every cached radar answer and every hold. */
 export function clearRadarCache() {
     radarCache.clear();
+    radarHolds.clear();
 }
 //# sourceMappingURL=radar.js.map
