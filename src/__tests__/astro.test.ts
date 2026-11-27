@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { getSun, getMoon, type MoonPhase } from "../astro.js";
 import { clearPointCache } from "../nws/point.js";
 import { NWS_API } from "../nws/http.js";
 import type { FetchImpl } from "../types.js";
+import { setRetrySleep } from "../helpers.js";
 
 const points = JSON.parse(
   readFileSync(new URL("./fixtures/nws/points.json", import.meta.url), "utf8"),
@@ -40,6 +41,10 @@ function shiftedBy(hours: number): Record<string, unknown> {
 }
 
 beforeEach(() => clearPointCache());
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getSun — the recorded fixture", () => {
   it("returns the sun times for the venue's current local day", async () => {

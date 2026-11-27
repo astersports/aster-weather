@@ -8,7 +8,7 @@
  * Only an observed reading is written to the last-good store. Never throws.
  */
 import { WeatherCache } from "./cache.js";
-import { RESILIENT_CACHE, bindOnError, roundOrNull } from "./helpers.js";
+import { RESILIENT_CACHE, bindOnError, roundOrNull, safeReport } from "./helpers.js";
 import { FRESH_MS, MAX_AGE_MS, type EngineOptions, type Stamp } from "./provenance.js";
 import { readLastGood, writeLastGood } from "./store.js";
 import { conditionFromNwsIcon, type Condition } from "./condition.js";
@@ -55,7 +55,12 @@ type Body = Omit<NowReading, "stamp"> & {
 
 const STORE_PREFIX = "aw:now:";
 
-const nowCache = new WeatherCache<Body | null>(FRESH_MS.now, 200, RESILIENT_CACHE);
+// No retry here: the ladder's own fetches retry through their caches, so a
+// second pass of the whole ladder would report each inner failure twice (B-007).
+const nowCache = new WeatherCache<Body | null>(FRESH_MS.now, 200, {
+  ...RESILIENT_CACHE,
+  retries: 0,
+});
 
 /** At most four decimals, trailing zeros dropped: the same key as hourly. */
 const fmt = (v: number): string => String(Number(v.toFixed(4)));
@@ -121,11 +126,20 @@ async function stationsOrNone(coords: Coords, opts: EngineOptions): Promise<Stat
   }
 }
 
-/** One station's observation, with a failure read as "no reading from this station". */
-async function observationOrNull(id: string, opts: EngineOptions): Promise<Observation | null> {
+/**
+ * One station's observation. A failure is reported once through `onError` as
+ * `getLatestObservation` and read as "no reading from this station". A 404 is
+ * not a failure: `getLatestObservation` answers `null` and nothing is reported.
+ */
+async function observationOrNull(
+  id: string,
+  coords: Coords,
+  opts: EngineOptions,
+): Promise<Observation | null> {
   try {
     return await getLatestObservation(id, opts);
-  } catch {
+  } catch (err) {
+    safeReport(bindOnError(opts, "getLatestObservation", coords.lat, coords.lon), err);
     return null;
   }
 }
@@ -134,7 +148,7 @@ async function observationOrNull(id: string, opts: EngineOptions): Promise<Obser
 async function load(coords: Coords, opts: EngineOptions, now: () => number): Promise<Body> {
   const stations = await stationsOrNone(coords, opts);
   for (const station of stations.slice(0, 2)) {
-    const obs = await observationOrNull(station.id, opts);
+    const obs = await observationOrNull(station.id, coords, opts);
     if (
       obs &&
       obs.temperatureC !== null &&

@@ -4,10 +4,21 @@
 import { type FetchOptions, type WeatherCall } from "./types.js";
 import type { CacheBehavior } from "./cache.js";
 /**
+ * Test hook: replace the retry backoff sleep (pass null to restore the real one).
+ * Not exported from the package index.
+ */
+export declare function setRetrySleep(fn: ((ms: number) => Promise<void>) | null): void;
+/**
  * The resilience profile every loader's cache runs with (v0.5.0): one retry
  * (M5) + stale-while-revalidate (M6). Shared so all four loaders stay identical.
+ * The sleep reads the current {@link setRetrySleep} at call time.
  */
 export declare const RESILIENT_CACHE: CacheBehavior;
+/**
+ * Call a consumer's error hook. A hook that throws, or returns a promise that
+ * rejects, never reaches the engine (CLAUDE.md §3 rule 6).
+ */
+export declare function safeReport(hook: ((err: unknown) => unknown) | undefined, err: unknown): void;
 /**
  * Bind a loader's `{ call, lat, lon }` context onto the consumer's `onError`
  * hook (M1). Returns `undefined` when no hook was supplied, so the cache stays

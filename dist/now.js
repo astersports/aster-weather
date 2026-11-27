@@ -8,7 +8,7 @@
  * Only an observed reading is written to the last-good store. Never throws.
  */
 import { WeatherCache } from "./cache.js";
-import { RESILIENT_CACHE, bindOnError, roundOrNull } from "./helpers.js";
+import { RESILIENT_CACHE, bindOnError, roundOrNull, safeReport } from "./helpers.js";
 import { FRESH_MS, MAX_AGE_MS } from "./provenance.js";
 import { readLastGood, writeLastGood } from "./store.js";
 import { conditionFromNwsIcon } from "./condition.js";
@@ -20,7 +20,12 @@ import { getLatestObservation, getStations, } from "./nws/observations.js";
 /** The longest age an observation may have and still be the current reading. */
 export const MAX_OBSERVATION_AGE_MS = 90 * 60_000;
 const STORE_PREFIX = "aw:now:";
-const nowCache = new WeatherCache(FRESH_MS.now, 200, RESILIENT_CACHE);
+// No retry here: the ladder's own fetches retry through their caches, so a
+// second pass of the whole ladder would report each inner failure twice (B-007).
+const nowCache = new WeatherCache(FRESH_MS.now, 200, {
+    ...RESILIENT_CACHE,
+    retries: 0,
+});
 /** At most four decimals, trailing zeros dropped: the same key as hourly. */
 const fmt = (v) => String(Number(v.toFixed(4)));
 /** Round to two decimals, keeping `null`. */
@@ -79,12 +84,17 @@ async function stationsOrNone(coords, opts) {
         return [];
     }
 }
-/** One station's observation, with a failure read as "no reading from this station". */
-async function observationOrNull(id, opts) {
+/**
+ * One station's observation. A failure is reported once through `onError` as
+ * `getLatestObservation` and read as "no reading from this station". A 404 is
+ * not a failure: `getLatestObservation` answers `null` and nothing is reported.
+ */
+async function observationOrNull(id, coords, opts) {
     try {
         return await getLatestObservation(id, opts);
     }
-    catch {
+    catch (err) {
+        safeReport(bindOnError(opts, "getLatestObservation", coords.lat, coords.lon), err);
         return null;
     }
 }
@@ -92,7 +102,7 @@ async function observationOrNull(id, opts) {
 async function load(coords, opts, now) {
     const stations = await stationsOrNone(coords, opts);
     for (const station of stations.slice(0, 2)) {
-        const obs = await observationOrNull(station.id, opts);
+        const obs = await observationOrNull(station.id, coords, opts);
         if (obs &&
             obs.temperatureC !== null &&
             now() - obs.at <= MAX_OBSERVATION_AGE_MS) {

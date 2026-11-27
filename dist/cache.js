@@ -23,6 +23,7 @@
  *    fetch ultimately fails (after retries), immediately before the stale/empty
  *    fallback — the single channel that makes an Open-Meteo outage observable.
  */
+import { safeReport } from "./helpers.js";
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export class WeatherCache {
     constructor(ttlMs, maxEntries = 200, behavior = {}) {
@@ -69,7 +70,7 @@ export class WeatherCache {
                 return (await this.runWithRetry(key, loader)).data;
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
                 // Stale-on-error: last-known-good if present (timestamp NOT refreshed,
                 // so the entry stays expired and the next call retries), else empty.
                 return cached?.data ?? empty;
@@ -115,7 +116,7 @@ export class WeatherCache {
                 return { data: fetched.data, fetchedAt: fetched.at, stale: false };
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
                 // Read the store now, not the value captured before the fetch.
                 const entry = this.store.get(key);
                 if (entry) {
@@ -172,7 +173,7 @@ export class WeatherCache {
                 await this.runWithRetry(key, loader);
             }
             catch (err) {
-                onError?.(err);
+                safeReport(onError, err);
             }
             finally {
                 this.refreshing.delete(key);

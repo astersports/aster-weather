@@ -23,8 +23,9 @@ export interface Observation {
 }
 /**
  * The observation stations for a coordinate, nearest first, or `null` when the
- * point is outside coverage or the list could not be read. Never throws. No
- * `onError`: the caller reports.
+ * point is outside coverage or the list could not be read. Never throws. A list
+ * that ultimately fails (after the cache's retry) is reported once through
+ * `onError` as `getStations`.
  */
 export declare function getStations(coords: Coords, opts?: EngineOptions): Promise<Station[] | null>;
 /** Test hook: clear every cached station list. */

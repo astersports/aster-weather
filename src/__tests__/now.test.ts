@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { getNow, clearNowCache, MAX_OBSERVATION_AGE_MS } from "../now.js";
 import { clearStationsCache } from "../nws/observations.js";
@@ -8,6 +8,7 @@ import { clearHourlyCache } from "../nws/hourly.js";
 import { NWS_API } from "../nws/http.js";
 import type { WeatherStore } from "../store.js";
 import type { FetchImpl, WeatherErrorContext } from "../types.js";
+import { setRetrySleep } from "../helpers.js";
 
 const load = (name: string) =>
   JSON.parse(readFileSync(new URL(`./fixtures/nws/${name}`, import.meta.url), "utf8")) as Record<
@@ -95,6 +96,10 @@ beforeEach(() => {
   clearGridCache();
   clearHourlyCache();
 });
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getNow — the observed rung", () => {
   it("reads the nearest station and returns the exact reading", async () => {
@@ -273,5 +278,52 @@ describe("getNow — no coverage", () => {
     expect(n).toBeNull();
     expect(onError).not.toHaveBeenCalled();
     expect(calls.some((u) => u.includes("/stations/"))).toBe(false);
+  });
+});
+
+describe("getNow — every failed request is reported once (B-012, B-007)", () => {
+  it("a stations list that fails is reported once as getStations, and the forecast still answers", async () => {
+    const onError = vi.fn();
+    const { fetchImpl } = healthy({ [STATIONS_URL]: fail(500) });
+    const n = await getNow(COORDS, { fetchImpl, now: () => NOW, onError });
+    expect(n!.stamp.kind).toBe("forecast");
+    expect(callsFor(onError, "getStations")).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("a station observation that fails is reported once as getLatestObservation, and the next station answers", async () => {
+    const onError = vi.fn();
+    const { fetchImpl } = healthy({ [OBS_KHPN]: fail(500) });
+    const n = await getNow(COORDS, { fetchImpl, now: () => NOW, onError });
+    expect(n!.stamp.kind).toBe("observed");
+    expect(n!.station!.id).toBe("KLGA");
+    expect(callsFor(onError, "getLatestObservation")).toHaveLength(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("a station observation that answers 404 is not an error and is not reported", async () => {
+    const onError = vi.fn();
+    const { fetchImpl } = healthy({ [OBS_KHPN]: fail(404) });
+    const n = await getNow(COORDS, { fetchImpl, now: () => NOW, onError });
+    expect(n!.station!.id).toBe("KLGA");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("when every request succeeds, onError is never called", async () => {
+    const onError = vi.fn();
+    const { fetchImpl } = healthy();
+    const n = await getNow(COORDS, { fetchImpl, now: () => NOW, onError });
+    expect(n!.stamp.kind).toBe("observed");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("on a cold cache, stations and hourly both failing reports each once, and hourly is asked twice (one try and its retry)", async () => {
+    const onError = vi.fn();
+    const { calls, fetchImpl } = healthy({ [STATIONS_URL]: fail(500), [HOURLY_URL]: fail(500) });
+    const n = await getNow(COORDS, { fetchImpl, now: () => NOW, onError });
+    expect(n).toBeNull();
+    const labels = onError.mock.calls.map((c) => (c[1] as WeatherErrorContext).call).sort();
+    expect(labels).toEqual(["getHourly", "getNow", "getStations"]);
+    expect(calls.filter((u) => u === HOURLY_URL)).toHaveLength(2);
   });
 });

@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   getCurrentWeather,
   clearCurrentCache,
   type FetchImpl,
 } from "../index.js";
+import { setRetrySleep } from "../helpers.js";
 
 // Stub an Open-Meteo `current` + `daily` (sunrise/sunset) response.
 function stubCurrent(overrides: Record<string, unknown> = {}): FetchImpl {
@@ -32,6 +33,10 @@ function stubCurrent(overrides: Record<string, unknown> = {}): FetchImpl {
     }),
   });
 }
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getCurrentWeather", () => {
   beforeEach(() => clearCurrentCache());

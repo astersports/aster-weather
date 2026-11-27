@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { getEventWeather } from "../event.js";
 import { clearPointCache } from "../nws/point.js";
@@ -6,6 +6,7 @@ import { clearGridCache } from "../nws/grid.js";
 import { clearHourlyCache } from "../nws/hourly.js";
 import { NWS_API } from "../nws/http.js";
 import type { FetchImpl } from "../types.js";
+import { setRetrySleep } from "../helpers.js";
 
 const load = (name: string) =>
   JSON.parse(readFileSync(new URL(`./fixtures/nws/${name}`, import.meta.url), "utf8")) as any;
@@ -70,6 +71,10 @@ function clearAll() {
 }
 
 beforeEach(clearAll);
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getEventWeather: the nearest hour", () => {
   it("reads the 13:00 EST hour for a 13:10 EST event", async () => {

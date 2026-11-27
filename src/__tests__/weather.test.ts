@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { getWeather } from "../weather.js";
 import { localDay } from "../localDay.js";
@@ -14,6 +14,7 @@ import { clearRadarCache } from "../radar.js";
 import { NWS_API } from "../nws/http.js";
 import type { WeatherStore } from "../store.js";
 import type { FetchImpl, WeatherErrorContext } from "../types.js";
+import { setRetrySleep } from "../helpers.js";
 
 const load = (name: string) =>
   JSON.parse(readFileSync(new URL(`./fixtures/nws/${name}`, import.meta.url), "utf8")) as any;
@@ -106,6 +107,10 @@ function resetCaches() {
 beforeEach(resetCaches);
 
 const isRadar = (u: string) => u.startsWith("https://mapservices.weather.noaa.gov/");
+
+// Failure tests never wait on the real retry backoff (B-006).
+beforeEach(() => setRetrySleep(async () => {}));
+afterEach(() => setRetrySleep(null));
 
 describe("getWeather: the one-call report", () => {
   it("gives every part for the fixture point", async () => {

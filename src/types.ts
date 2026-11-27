@@ -209,7 +209,9 @@ export type WeatherCall =
   | "getDaily"
   | "getNow"
   | "getAlerts"
-  | "getRadarRain";
+  | "getRadarRain"
+  | "getStations"
+  | "getLatestObservation";
 
 /**
  * Context passed to {@link FetchOptions.onError} so a consumer can tag the

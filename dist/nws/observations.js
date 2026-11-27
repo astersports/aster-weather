@@ -5,7 +5,7 @@
  * failures throw, and the caller catches.
  */
 import { WeatherCache } from "../cache.js";
-import { RESILIENT_CACHE, numOrNull } from "../helpers.js";
+import { RESILIENT_CACHE, bindOnError, numOrNull } from "../helpers.js";
 import { FRESH_MS } from "../provenance.js";
 import { NWS_API, nwsJson } from "./http.js";
 import { getPoint } from "./point.js";
@@ -40,8 +40,9 @@ function parseStations(body) {
 }
 /**
  * The observation stations for a coordinate, nearest first, or `null` when the
- * point is outside coverage or the list could not be read. Never throws. No
- * `onError`: the caller reports.
+ * point is outside coverage or the list could not be read. Never throws. A list
+ * that ultimately fails (after the cache's retry) is reported once through
+ * `onError` as `getStations`.
  */
 export async function getStations(coords, opts = {}) {
     const point = await getPoint(coords, opts);
@@ -53,7 +54,7 @@ export async function getStations(coords, opts = {}) {
         if (body === null)
             throw new Error("NWS stations: 404");
         return parseStations(body);
-    }, null);
+    }, null, bindOnError(opts, "getStations", coords.lat, coords.lon));
 }
 /** Test hook: clear every cached station list. */
 export function clearStationsCache() {

@@ -5,7 +5,7 @@
  * failures throw, and the caller catches.
  */
 import { WeatherCache } from "../cache.js";
-import { RESILIENT_CACHE, numOrNull } from "../helpers.js";
+import { RESILIENT_CACHE, bindOnError, numOrNull } from "../helpers.js";
 import { FRESH_MS, type EngineOptions } from "../provenance.js";
 import type { Coords } from "../types.js";
 import { NWS_API, nwsJson } from "./http.js";
@@ -73,8 +73,9 @@ function parseStations(body: unknown): Station[] {
 
 /**
  * The observation stations for a coordinate, nearest first, or `null` when the
- * point is outside coverage or the list could not be read. Never throws. No
- * `onError`: the caller reports.
+ * point is outside coverage or the list could not be read. Never throws. A list
+ * that ultimately fails (after the cache's retry) is reported once through
+ * `onError` as `getStations`.
  */
 export async function getStations(
   coords: Coords,
@@ -91,6 +92,7 @@ export async function getStations(
       return parseStations(body);
     },
     null,
+    bindOnError(opts, "getStations", coords.lat, coords.lon),
   );
 }
 

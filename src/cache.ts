@@ -24,6 +24,8 @@
  *    fallback — the single channel that makes an Open-Meteo outage observable.
  */
 
+import { safeReport } from "./helpers.js";
+
 /** Cache resilience behavior (M5 retry + M6 SWR), configured per cache instance. */
 export interface CacheBehavior {
   /** Retry the loader this many times before falling back to stale/empty. Default 0. */
@@ -106,7 +108,7 @@ export class WeatherCache<T> {
       try {
         return (await this.runWithRetry(key, loader)).data;
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
         // Stale-on-error: last-known-good if present (timestamp NOT refreshed,
         // so the entry stays expired and the next call retries), else empty.
         return cached?.data ?? empty;
@@ -160,7 +162,7 @@ export class WeatherCache<T> {
         const fetched = await this.runWithRetry(key, loader, now);
         return { data: fetched.data, fetchedAt: fetched.at, stale: false };
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
         // Read the store now, not the value captured before the fetch.
         const entry = this.store.get(key);
         if (entry) {
@@ -224,7 +226,7 @@ export class WeatherCache<T> {
       try {
         await this.runWithRetry(key, loader);
       } catch (err) {
-        onError?.(err);
+        safeReport(onError, err);
       } finally {
         this.refreshing.delete(key);
       }
