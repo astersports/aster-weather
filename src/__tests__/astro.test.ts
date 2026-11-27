@@ -7,7 +7,7 @@ import {
   SUN_REFRESH_AFTER_MS,
   type MoonPhase,
 } from "../astro.js";
-import { clearPointCache } from "../nws/point.js";
+import { clearPointCache, getPoint } from "../nws/point.js";
 import { NWS_API } from "../nws/http.js";
 import type { FetchImpl } from "../types.js";
 import { setRetrySleep } from "../helpers.js";
@@ -230,7 +230,7 @@ describe("getSun — one point refresh per coordinate per 15 minutes (B-010)", (
     expect(calls).toHaveLength(1);
   });
 
-  it("a refresh that fails gives null, reports getPoint once, and is not asked again within 15 minutes", async () => {
+  it("a refresh that fails gives null, reports getPoint once, and is not asked again inside the 30-second point hold", async () => {
     const first = stub(200);
     await getSun(C, { fetchImpl: first.fetchImpl, now: () => T0 });
 
@@ -242,7 +242,7 @@ describe("getSun — one point refresh per coordinate per 15 minutes (B-010)", (
 
     const requests = broken.calls.length;
     expect(
-      await getSun(C, { fetchImpl: broken.fetchImpl, onError, now: () => T0 + DAY + 60_000 }),
+      await getSun(C, { fetchImpl: broken.fetchImpl, onError, now: () => T0 + DAY + 10_000 }),
     ).toBeNull();
     expect(broken.calls).toHaveLength(requests);
     expect(onError).toHaveBeenCalledTimes(1);
@@ -295,6 +295,84 @@ describe("getSun — one point refresh per coordinate per 15 minutes (B-010)", (
     const newestBefore = calls.filter((u) => u === urlOf(200)).length;
     await getSun(at(200), { fetchImpl, now: () => T0 + DAY });
     expect(calls.filter((u) => u === urlOf(200)).length).toBe(newestBefore);
+  });
+});
+
+describe("getSun — the point is read first; simultaneous callers share one refresh (B-010 rework)", () => {
+  const SUN_TODAY_AFTER_SHIFT = {
+    sunrise: 1795780591000 + DAY,
+    sunset: 1795814934000 + DAY,
+    firstLight: Date.parse("2026-11-27T06:26:18-05:00") + DAY,
+    lastLight: Date.parse("2026-11-27T16:59:07-05:00") + DAY,
+    dayLengthMs: 34343000,
+  };
+
+  /** A stub whose n-th call gets the n-th reply; the last one repeats. */
+  function replies(...list: Array<[number, unknown]>) {
+    const calls: string[] = [];
+    const fetchImpl: FetchImpl = async (url) => {
+      calls.push(url);
+      const [status, body] = list[Math.min(calls.length - 1, list.length - 1)]!;
+      return { ok: status >= 200 && status < 300, status, json: async () => body };
+    };
+    return { calls, fetchImpl };
+  }
+
+  it("four simultaneous calls on a stale day make two point requests in all, and all four get null", async () => {
+    const { calls, fetchImpl } = stub(200); // the lookup keeps answering the old day
+    const results = await Promise.all([1, 2, 3, 4].map(() => getSun(C, { fetchImpl, now: () => T0 + DAY })));
+    expect(results).toEqual([null, null, null, null]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("four simultaneous calls on a stale day, with a refresh that brings today, all return today's times in two requests", async () => {
+    const { calls, fetchImpl } = replies([200, points], [200, shiftedBy(24)]);
+    const results = await Promise.all([1, 2, 3, 4].map(() => getSun(C, { fetchImpl, now: () => T0 + DAY })));
+    for (const r of results) expect(r).toEqual(SUN_TODAY_AFTER_SHIFT);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a failed refresh, then today's point loaded by another fetcher: getSun returns today's times with no further request", async () => {
+    const first = stub(200);
+    await getSun(C, { fetchImpl: first.fetchImpl, now: () => T0 });
+
+    const broken = stub(500);
+    expect(await getSun(C, { fetchImpl: broken.fetchImpl, now: () => T0 + DAY })).toBeNull();
+
+    // Another fetcher loads the point once the 30-second hold has passed (getPoint, not clearPointCache).
+    const today = stub(200, shiftedBy(24));
+    await getPoint(C, { fetchImpl: today.fetchImpl, now: () => T0 + DAY + 31_000 });
+    expect(today.calls).toHaveLength(1);
+
+    const later = stub(200);
+    expect(await getSun(C, { fetchImpl: later.fetchImpl, now: () => T0 + DAY + 2 * 60_000 })).toEqual(
+      SUN_TODAY_AFTER_SHIFT,
+    );
+    expect(later.calls).toHaveLength(0);
+  });
+
+  it("a clock that stepped back is not held by the refresh window: a call 60 s earlier refreshes again", async () => {
+    const { calls, fetchImpl } = stub(200); // the lookup keeps answering the old day
+    await getSun(C, { fetchImpl, now: () => T0 + DAY }); // refresh attempt recorded at T0 + DAY
+    expect(calls).toHaveLength(2);
+
+    expect(await getSun(C, { fetchImpl, now: () => T0 + DAY - 60_000 })).toBeNull();
+    expect(calls).toHaveLength(3);
+  });
+
+  it("after a failed refresh: 10 s later makes no request; 31 s later the point is asked again", async () => {
+    const first = stub(200);
+    await getSun(C, { fetchImpl: first.fetchImpl, now: () => T0 });
+
+    const broken = stub(500);
+    expect(await getSun(C, { fetchImpl: broken.fetchImpl, now: () => T0 + DAY })).toBeNull();
+    const afterFailure = broken.calls.length;
+
+    expect(await getSun(C, { fetchImpl: broken.fetchImpl, now: () => T0 + DAY + 10_000 })).toBeNull();
+    expect(broken.calls).toHaveLength(afterFailure);
+
+    expect(await getSun(C, { fetchImpl: broken.fetchImpl, now: () => T0 + DAY + 31_000 })).toBeNull();
+    expect(broken.calls.length).toBeGreaterThan(afterFailure);
   });
 });
 

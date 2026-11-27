@@ -24,6 +24,15 @@
  *    fallback — the single channel that makes an Open-Meteo outage observable.
  */
 import { safeReport } from "./helpers.js";
+/** `freshFor` read from the value; a throw means the cache's own ttl (the engine never throws). */
+function freshOrTtl(freshFor, data, ttlMs) {
+    try {
+        return freshFor(data);
+    }
+    catch {
+        return ttlMs;
+    }
+}
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export class WeatherCache {
     constructor(ttlMs, maxEntries = 200, behavior = {}) {
@@ -105,7 +114,7 @@ export class WeatherCache {
      */
     async getWithMeta(key, loader, empty, onError, maxStaleMs = Infinity, now = Date.now, freshFor) {
         const cached = this.store.get(key);
-        const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshFor(cached.data)) : this.ttlMs;
+        const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
         if (cached && now() - cached.fetchedAt < freshMs) {
             // LRU touch, as in get().
             this.store.delete(key);

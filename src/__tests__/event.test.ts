@@ -240,3 +240,18 @@ describe("getEventWeather: warning flags", () => {
     expect(await flags(allNull)).toEqual({ rain: false, severe: false });
   });
 });
+
+describe("getEventWeather: the grid is down (B-003)", () => {
+  it("the hours stand; the gust is null, no severe flag, and the rain flag follows the hour's chance", async () => {
+    const w = router({
+      [POINT_URL]: ok(points),
+      [HOURLY_URL]: ok(hourly),
+      [GRID_URL]: { status: 500, body: {} },
+    });
+    const e = (await run(EVENT, w))!;
+    expect(e.hour.windGust).toBeNull();
+    expect(e.isSevereWarning).toBe(false);
+    expect(e.hour.precipProbability).toBe(44);
+    expect(e.isRainWarning).toBe(true);
+  });
+});

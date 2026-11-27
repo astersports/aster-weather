@@ -409,3 +409,29 @@ describe("B-003 — getWithMeta freshFor: a value can shorten its own freshness"
     expect(onError).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the engine never throws: a freshFor that throws falls back to the cache's ttl", () => {
+  const TTL = 1000;
+
+  it("getWithMeta resolves, and the entry is fresh for the cache's own ttl", async () => {
+    const cache = new WeatherCache<number>(TTL);
+    let runs = 0;
+    const loader = async () => {
+      runs += 1;
+      return runs;
+    };
+    const throwing = (): number => {
+      throw new Error("boom");
+    };
+    const first = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => 0, throwing);
+    expect(first).toEqual({ data: 1, fetchedAt: 0, stale: false });
+
+    const inside = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL - 1, throwing);
+    expect(inside).toEqual({ data: 1, fetchedAt: 0, stale: false });
+    expect(runs).toBe(1);
+
+    const after = await cache.getWithMeta("k", loader, -1, undefined, Infinity, () => TTL, throwing);
+    expect(after).toEqual({ data: 2, fetchedAt: TTL, stale: false });
+    expect(runs).toBe(2);
+  });
+});

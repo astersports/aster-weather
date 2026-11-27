@@ -442,3 +442,34 @@ describe("getHourly — a failed point lookup serves the stored reading", () => 
     expect(f.calls).toHaveLength(1);
   });
 });
+
+describe("getHourly — a stored body without the gridAvailable field reads as no grid (B-003)", () => {
+  // Failure tests never wait on the real retry backoff (B-006).
+  beforeEach(() => setRetrySleep(async () => {}));
+  afterEach(() => setRetrySleep(null));
+
+  it("cold cache, hourly fails on every attempt, last-good body without the field: served stale with gridAvailable false", async () => {
+    const store = memoryStore();
+    await getHourly(COORDS, { fetchImpl: happy().fetchImpl, store, now: () => NOW - 3600_000 });
+
+    // Remove the field from the stored body, as a build from before it existed would have written it.
+    const raw = JSON.parse(store.data.get(STORE_KEY)!) as { data: Record<string, unknown> };
+    expect(raw.data.gridAvailable).toBe(true);
+    delete raw.data.gridAvailable;
+    store.data.set(STORE_KEY, JSON.stringify(raw));
+
+    clearPointCache();
+    clearGridCache();
+    clearHourlyCache();
+    const broken = router({
+      [POINT_URL]: ok(points),
+      [HOURLY_URL]: fail(500),
+      [GRID_URL]: ok(grid),
+    });
+    const r = await getHourly(COORDS, { fetchImpl: broken.fetchImpl, store, now: () => NOW });
+    expect(r).not.toBeNull();
+    expect(r!.stamp.stale).toBe(true);
+    expect(r!.gridAvailable).toBe(false);
+    expect(r!.hours).toHaveLength(30);
+  });
+});

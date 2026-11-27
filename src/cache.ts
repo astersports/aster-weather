@@ -38,6 +38,15 @@ export interface CacheBehavior {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** `freshFor` read from the value; a throw means the cache's own ttl (the engine never throws). */
+function freshOrTtl<T>(freshFor: (data: T) => number, data: T, ttlMs: number): number {
+  try {
+    return freshFor(data);
+  } catch {
+    return ttlMs;
+  }
+}
+
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -152,7 +161,8 @@ export class WeatherCache<T> {
     freshFor?: (data: T) => number,
   ): Promise<CacheMeta<T>> {
     const cached = this.store.get(key);
-    const freshMs = cached && freshFor ? Math.min(this.ttlMs, freshFor(cached.data)) : this.ttlMs;
+    const freshMs =
+      cached && freshFor ? Math.min(this.ttlMs, freshOrTtl(freshFor, cached.data, this.ttlMs)) : this.ttlMs;
     if (cached && now() - cached.fetchedAt < freshMs) {
       // LRU touch, as in get().
       this.store.delete(key);
