@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { getAlerts, clearAlertsCache, type WeatherAlert } from "../nws/alerts.js";
+import { getAlerts, getAlertsReading, ALERT_MAX_STALE_MS, clearAlertsCache, type WeatherAlert } from "../nws/alerts.js";
 import { clearPointCache } from "../nws/point.js";
 import { setRetrySleep } from "../helpers.js";
 import { NWS_API } from "../nws/http.js";
@@ -300,5 +300,50 @@ describe("getAlerts — a failed point lookup still asks for the alerts", () => 
     const r = router({ ...okRoutes(), [POINTS_URL]: { status: 404, body: {} } });
     expect(await getAlerts(COORDS, { fetchImpl: r.fetchImpl, now: () => T0 })).toBeNull();
     expect(r.calls.filter((u) => u === ALERTS_URL)).toHaveLength(0);
+  });
+});
+
+describe("getAlertsReading — fetch time and staleness (B-018)", () => {
+  it("gives the list with the fetch time and stale false, and getAlerts agrees", async () => {
+    const { fetchImpl } = router(okRoutes());
+    const reading = await getAlertsReading(COORDS, { fetchImpl, now: () => T0 });
+    const list = await getAlerts(COORDS, { fetchImpl, now: () => T0 });
+    expect(reading).toEqual({ alerts: list, fetchedAt: T0, stale: false });
+    expect(reading!.alerts).toHaveLength(1);
+  });
+
+  it("a refresh that fails 30 min later gives stale true and the original fetch time", async () => {
+    vi.useFakeTimers();
+    const routes = okRoutes();
+    const { fetchImpl } = router(routes);
+    const first = await getAlertsReading(COORDS, { fetchImpl, now: () => T0 });
+    expect(first!.stale).toBe(false);
+
+    routes[ALERTS_URL] = { status: 500, body: {} };
+    const later = T0 + 30 * 60_000;
+    const pending = getAlertsReading(COORDS, { fetchImpl, now: () => later });
+    await vi.advanceTimersByTimeAsync(1000);
+    const reading = await pending;
+    expect(reading).not.toBeNull();
+    expect(reading!.stale).toBe(true);
+    expect(reading!.fetchedAt).toBe(T0);
+    expect(reading!.alerts).toHaveLength(1);
+  });
+
+  it("gives null past ALERT_MAX_STALE_MS when the refresh fails", async () => {
+    vi.useFakeTimers();
+    const routes = okRoutes();
+    const { fetchImpl } = router(routes);
+    expect(await getAlertsReading(COORDS, { fetchImpl, now: () => T0 })).not.toBeNull();
+    routes[ALERTS_URL] = { status: 500, body: {} };
+    const late = T0 + ALERT_MAX_STALE_MS + 1;
+    const pending = getAlertsReading(COORDS, { fetchImpl, now: () => late });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await pending).toBeNull();
+  });
+
+  it("gives null outside coverage", async () => {
+    const { fetchImpl } = router({ [POINTS_URL]: { status: 404, body: {} } });
+    expect(await getAlertsReading(COORDS, { fetchImpl, now: () => T0 })).toBeNull();
   });
 });

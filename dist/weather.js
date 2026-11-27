@@ -4,7 +4,7 @@
  * Radar is asked once, here, and applied to the current reading and today's
  * daily cell with the pure functions in `radar.ts`.
  */
-import { getAlerts } from "./nws/alerts.js";
+import { getAlertsReading } from "./nws/alerts.js";
 import { getDaily } from "./nws/daily.js";
 import { getHourly } from "./nws/hourly.js";
 import { lookupPoint } from "./nws/point.js";
@@ -39,11 +39,11 @@ export async function getWeather(coords, opts = {}) {
     // Each part is asked without radar, so the radar is asked only here, once.
     const partOpts = { ...opts, radar: false };
     const wantRadar = opts.radar !== false;
-    const [now, hourly, daily, alerts, sun, radar] = await Promise.all([
+    const [now, hourly, daily, alertsReading, sun, radar] = await Promise.all([
         part(() => getNow(coords, partOpts)),
         part(() => getHourly(coords, partOpts)),
         part(() => getDaily(coords, partOpts)),
-        part(() => getAlerts(coords, partOpts)),
+        part(() => getAlertsReading(coords, partOpts)),
         point ? part(() => getSun(coords, partOpts)) : Promise.resolve(null),
         wantRadar ? part(() => getRadarRain(coords, opts)) : Promise.resolve(null),
     ]);
@@ -64,7 +64,8 @@ export async function getWeather(coords, opts = {}) {
         daily: daily && radar && today !== null
             ? { ...daily, days: applyRadarToToday(daily.days, radar, today, claimAt) }
             : daily,
-        alerts,
+        alerts: alertsReading?.alerts ?? null,
+        alertsReading,
         radar,
         sun,
         moon: getMoon(nowMs),

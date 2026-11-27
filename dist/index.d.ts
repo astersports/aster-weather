@@ -28,7 +28,7 @@ export { getWeather, type WeatherReport } from "./weather.js";
 export { getNow, MAX_OBSERVATION_AGE_MS, type NowReading } from "./now.js";
 export { getHourly, GRID_RETRY_AFTER_MS, type HourlyResult, type HourReading, type AmountBlock, } from "./nws/hourly.js";
 export { getDaily, type DailyResult, type DayReading } from "./nws/daily.js";
-export { getAlerts, ALERT_MAX_STALE_MS, type WeatherAlert } from "./nws/alerts.js";
+export { getAlerts, getAlertsReading, ALERT_MAX_STALE_MS, type WeatherAlert, type AlertsReading, } from "./nws/alerts.js";
 export { getRadarRain, MAX_FRAME_AGE_MS, RADAR_TIMEOUT_MS, RADAR_RETRY_AFTER_MS, type RadarRain, type RadarFrame, type EchoIntensity, } from "./radar.js";
 export { getSun, getMoon, SUN_REFRESH_AFTER_MS, type SunTimes, type MoonPhase, } from "./astro.js";
 export { getEventWeather, type EventReading } from "./event.js";
