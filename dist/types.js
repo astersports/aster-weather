@@ -8,8 +8,11 @@
  *
  * v0.2.0: measurement fields are `number | null` — a missing Open-Meteo
  * reading is `null` ("unknown"), never a fabricated `0` (WX-P1-1 / AP #27,
- * #36). `weatherCode` stays a number (it drives icon dispatch; absent → 0
- * "clear", the documented neutral).
+ * #36).
+ *
+ * v0.7.0: `weatherCode`, `icon` and `description` are `number | null`,
+ * `WeatherIconKey | null` and `string | null` too. A missing or non-WMO code
+ * is `null` ("unknown"), never clear sky. A real `0` stays clear sky.
  */
 /**
  * Open-Meteo hourly coverage supports up to 16 days; we request 14 to comfortably

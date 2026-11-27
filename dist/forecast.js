@@ -13,9 +13,13 @@
 import { FORECAST_DAYS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
 import { bindOnError, coordKey, fetchJsonWithTimeout, isValidCoord, numOrNull, RESILIENT_CACHE, roundOrNull, } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
-import { getWeatherInfo } from "./wmo.js";
+import { weatherInfoOrNull } from "./wmo.js";
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
+/** A WMO code is a number; anything else (missing, null, a string) is unknown. */
+function codeOrNull(v) {
+    return typeof v === "number" ? numOrNull(v) : null;
+}
 const EMPTY_BUNDLE = { hours: [], utcOffsetSeconds: 0 };
 const cache = new WeatherCache(CACHE_TTL_MS, undefined, RESILIENT_CACHE);
 function buildUrl(lat, lon) {
@@ -61,7 +65,7 @@ async function loadHourly(coords, opts = {}) {
             apparentTemperature: roundOrNull(h.apparent_temperature?.[i]),
             precipitationProbability: numOrNull(h.precipitation_probability?.[i]),
             precipitation: numOrNull(h.precipitation?.[i]),
-            weatherCode: h.weather_code?.[i] ?? 0,
+            weatherCode: codeOrNull(h.weather_code?.[i]),
             cloudCover: numOrNull(h.cloud_cover?.[i]),
             windSpeed: roundOrNull(h.wind_speed_10m?.[i]),
             windGusts: roundOrNull(h.wind_gusts_10m?.[i]),
@@ -139,7 +143,7 @@ export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
     const closest = getWeatherForTime(hours, eventTime, MAX_FORECAST_HOUR_GAP_MS);
     if (!closest)
         return null;
-    const info = getWeatherInfo(closest.weatherCode);
+    const info = weatherInfoOrNull(closest.weatherCode);
     const stripForecasts = hours
         .filter((f) => f.timestamp >= eventTime - 2 * 60 * 60 * 1000 &&
         f.timestamp <= eventTime + 4 * 60 * 60 * 1000)
@@ -150,7 +154,7 @@ export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
         temperature: f.temperature,
         precipProbability: f.precipitationProbability,
         weatherCode: f.weatherCode,
-        icon: getWeatherInfo(f.weatherCode).icon,
+        icon: weatherInfoOrNull(f.weatherCode)?.icon ?? null,
     }));
     const rain = closest.precipitationProbability;
     const temp = closest.temperature;
@@ -162,8 +166,8 @@ export async function getWeatherForEvent(coords, eventStartISO, opts = {}) {
         precipProbability: rain,
         precipAmount: closest.precipitation,
         weatherCode: closest.weatherCode,
-        description: info.description,
-        icon: info.icon,
+        description: info?.description ?? null,
+        icon: info?.icon ?? null,
         windSpeed: wind,
         windGusts: gust,
         isDay: closest.isDay,

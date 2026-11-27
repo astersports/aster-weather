@@ -8,8 +8,11 @@
  *
  * v0.2.0: measurement fields are `number | null` — a missing Open-Meteo
  * reading is `null` ("unknown"), never a fabricated `0` (WX-P1-1 / AP #27,
- * #36). `weatherCode` stays a number (it drives icon dispatch; absent → 0
- * "clear", the documented neutral).
+ * #36).
+ *
+ * v0.7.0: `weatherCode`, `icon` and `description` are `number | null`,
+ * `WeatherIconKey | null` and `string | null` too. A missing or non-WMO code
+ * is `null` ("unknown"), never clear sky. A real `0` stays clear sky.
  */
 
 /**
@@ -101,7 +104,7 @@ export interface HourlyForecast {
   apparentTemperature: number | null; // °F (feels like)
   precipitationProbability: number | null; // 0-100
   precipitation: number | null; // inches
-  weatherCode: number; // WMO code (drives icon; absent → 0)
+  weatherCode: number | null; // WMO code (drives icon); null = unknown
   cloudCover: number | null; // 0-100
   windSpeed: number | null; // mph (sustained)
   windGusts: number | null; // mph (gusts)
@@ -126,9 +129,9 @@ export interface EventWeather {
   feelsLike: number | null;
   precipProbability: number | null;
   precipAmount: number | null;
-  weatherCode: number;
-  description: string;
-  icon: WeatherIconKey;
+  weatherCode: number | null;
+  description: string | null;
+  icon: WeatherIconKey | null;
   windSpeed: number | null;
   windGusts: number | null;
   isDay: boolean;
@@ -139,17 +142,17 @@ export interface EventWeather {
     label: string;
     temperature: number | null;
     precipProbability: number | null;
-    weatherCode: number;
-    icon: WeatherIconKey;
+    weatherCode: number | null;
+    icon: WeatherIconKey | null;
   }>;
 }
 
 export interface CurrentWeather {
   temperature: number | null;
   feelsLike: number | null;
-  weatherCode: number;
-  description: string;
-  icon: WeatherIconKey;
+  weatherCode: number | null;
+  description: string | null;
+  icon: WeatherIconKey | null;
   windSpeed: number | null;
   windGusts: number | null;
   windDirection: number | null; // degrees (v0.4.0 — WX-P3-3)
@@ -169,9 +172,9 @@ export interface DailyForecast {
   precipProbabilityMax: number | null;
   windSpeedMax: number | null; // mph (v0.4.0 — WX-P3-5)
   uvIndexMax: number | null; // (v0.4.0 — WX-P3-4)
-  weatherCode: number; // WMO code
-  icon: WeatherIconKey; // e.g. "clear", "rain", "partly-cloudy"
-  description: string; // e.g. "Clear sky", "Moderate rain"
+  weatherCode: number | null; // WMO code; null = unknown
+  icon: WeatherIconKey | null; // e.g. "clear", "rain", "partly-cloudy"; null = unknown
+  description: string | null; // e.g. "Clear sky", "Moderate rain"; null = unknown
   sunrise: string; // e.g. "5:21 AM"
   sunset: string; // e.g. "8:29 PM"
 }

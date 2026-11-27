@@ -19,7 +19,7 @@ import {
   roundOrNull,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
-import { getWeatherInfo } from "./wmo.js";
+import { weatherInfoOrNull } from "./wmo.js";
 
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
@@ -61,7 +61,7 @@ interface OpenMeteoCurrent {
     time?: string;
     temperature_2m?: number | null;
     apparent_temperature?: number | null;
-    weather_code?: number;
+    weather_code?: unknown;
     wind_speed_10m?: number | null;
     wind_gusts_10m?: number | null;
     wind_direction_10m?: number | null;
@@ -89,13 +89,15 @@ export async function getCurrentWeather(
         throw new Error("current shape");
       }
       const c = data.current;
-      const info = getWeatherInfo(c.weather_code ?? 0);
+      const code =
+        typeof c.weather_code === "number" ? numOrNull(c.weather_code) : null;
+      const info = weatherInfoOrNull(code);
       const result: CurrentWeather = {
         temperature: roundOrNull(c.temperature_2m),
         feelsLike: roundOrNull(c.apparent_temperature),
-        weatherCode: c.weather_code ?? 0,
-        description: info.description,
-        icon: info.icon,
+        weatherCode: code,
+        description: info?.description ?? null,
+        icon: info?.icon ?? null,
         windSpeed: roundOrNull(c.wind_speed_10m),
         windGusts: roundOrNull(c.wind_gusts_10m),
         windDirection: roundOrNull(c.wind_direction_10m),
