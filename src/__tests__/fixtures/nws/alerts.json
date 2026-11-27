@@ -1,0 +1,116 @@
+{
+ "@context": [
+  "https://geojson.org/geojson-ld/geojson-context.jsonld",
+  {
+   "@version": "1.1",
+   "wx": "https://api.weather.gov/ontology#",
+   "@vocab": "https://api.weather.gov/ontology#"
+  }
+ ],
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.b8aa07e7aeac6e591626c9d0328a801ecfc7c50b.004.2",
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.b8aa07e7aeac6e591626c9d0328a801ecfc7c50b.004.2",
+    "@type": "wx:Alert",
+    "id": "urn:oid:2.49.0.1.840.0.b8aa07e7aeac6e591626c9d0328a801ecfc7c50b.004.2",
+    "areaDesc": "Southern Fairfield; Southern New Haven; Southern Westchester; Bronx; Northwest Suffolk; Southwest Suffolk; Northern Queens; Northern Nassau; Southern Nassau",
+    "geocode": {
+     "SAME": [
+      "009001",
+      "009009",
+      "036119",
+      "036005",
+      "036103",
+      "036081",
+      "036059"
+     ],
+     "UGC": [
+      "CTZ009",
+      "CTZ010",
+      "NYZ071",
+      "NYZ073",
+      "NYZ078",
+      "NYZ080",
+      "NYZ176",
+      "NYZ177",
+      "NYZ179"
+     ]
+    },
+    "affectedZones": [
+     "https://api.weather.gov/zones/forecast/CTZ009",
+     "https://api.weather.gov/zones/forecast/CTZ010",
+     "https://api.weather.gov/zones/forecast/NYZ071",
+     "https://api.weather.gov/zones/forecast/NYZ073",
+     "https://api.weather.gov/zones/forecast/NYZ078",
+     "https://api.weather.gov/zones/forecast/NYZ080",
+     "https://api.weather.gov/zones/forecast/NYZ176",
+     "https://api.weather.gov/zones/forecast/NYZ177",
+     "https://api.weather.gov/zones/forecast/NYZ179"
+    ],
+    "references": [],
+    "sent": "2026-11-27T04:16:00-05:00",
+    "effective": "2026-11-27T04:16:00-05:00",
+    "onset": "2026-11-27T06:00:00-05:00",
+    "expires": "2026-11-27T15:00:00-05:00",
+    "ends": "2026-11-27T15:00:00-05:00",
+    "status": "Actual",
+    "messageType": "Alert",
+    "category": "Met",
+    "severity": "Minor",
+    "certainty": "Likely",
+    "urgency": "Expected",
+    "event": "Coastal Flood Advisory",
+    "sender": "w-nws.webmaster@noaa.gov",
+    "senderName": "NWS Upton NY",
+    "headline": "Coastal Flood Advisory issued November 27 at 4:16AM EST until November 27 at 3:00PM EST by NWS Upton NY",
+    "description": "* WHAT...Up to one foot of inundation above ground level\nexpected in vulnerable areas near the waterfront and shoreline.\n\n* WHERE...In Connecticut, Southern Fairfield and Southern New\nHaven Counties. In New York, Southern Westchester, Bronx,\nNorthwest Suffolk, Southwest Suffolk, Northern Queens,\nNorthern Nassau and Southern Nassau Counties.\n\n* WHEN...Until 3 PM EST this afternoon.\n\n* COASTAL FLOOD IMPACTS...Minor flooding in the more vulnerable locations\nnear the waterfront and shoreline. Some roads and low lying properties\nincluding parking lots, parks, lawns, and homes and businesses with\nbasements near the waterfront will experience minor flooding.\n\n* SHORELINE IMPACTS...For southern Nassau and southwest Suffolk, Breaking\nwaves of 8 to 10 ft will result in beach flooding and dune erosion during\nthis morning's high tide. Surf height will gradually lower through the day.",
+    "instruction": "If travel is required, allow extra time as some roads may be\nclosed. Do not drive around barricades or through water of\nunknown depth. Take the necessary actions to protect flood-prone\nproperty.",
+    "response": "Monitor",
+    "note": null,
+    "parameters": {
+     "AWIPSidentifier": [
+      "CFWOKX"
+     ],
+     "WMOidentifier": [
+      "WHUS41 KOKX 270916"
+     ],
+     "NWSheadline": [
+      "COASTAL FLOOD ADVISORY REMAINS IN EFFECT UNTIL 3 PM EST THIS AFTERNOON"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "VTEC": [
+      "/O.CON.KOKX.CF.Y.0015.261127T1100Z-261127T2000Z/"
+     ],
+     "eventEndingTime": [
+      "2026-11-27T15:00:00-05:00"
+     ],
+     "expiredReferences": [
+      "w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.cf75eaeec4cb20baf8cc6dd4af2f31a106e2f5c0.003.2,2026-11-25T19:40:00-05:00 w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.7a9cfa569b08c0d5fb1fcc5f0d2a0d687290afa6.006.1,2026-11-26T15:48:00-05:00 w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.7a9cfa569b08c0d5fb1fcc5f0d2a0d687290afa6.002.2,2026-11-26T15:48:00-05:00 w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.b90723afe052311ba87bfcbd5d46e56539cb6a94.003.2,2026-11-25T16:06:00-05:00 w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.c4951226e15f213261de759eeab71abeb55482d2.003.2,2026-11-26T04:33:00-05:00"
+     ]
+    },
+    "scope": "Public",
+    "code": "IPAWSv1.0",
+    "language": "en-US",
+    "web": "http://www.weather.gov",
+    "eventCode": {
+     "SAME": [
+      "NWS"
+     ],
+     "NationalWeatherService": [
+      "CFY"
+     ]
+    }
+   }
+  }
+ ],
+ "title": "Current watches, warnings, and advisories for 41.03 N, 73.76 W",
+ "updated": "2026-11-27T13:57:36+00:00"
+}

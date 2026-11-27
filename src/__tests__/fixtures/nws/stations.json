@@ -1,0 +1,100 @@
+{
+ "@context": [
+  "https://geojson.org/geojson-ld/geojson-context.jsonld",
+  {
+   "@version": "1.1",
+   "wx": "https://api.weather.gov/ontology#",
+   "s": "https://schema.org/",
+   "geo": "http://www.opengis.net/ont/geosparql#",
+   "unit": "http://codes.wmo.int/common/unit/",
+   "@vocab": "https://api.weather.gov/ontology#",
+   "geometry": {
+    "@id": "s:GeoCoordinates",
+    "@type": "geo:wktLiteral"
+   },
+   "city": "s:addressLocality",
+   "state": "s:addressRegion",
+   "distance": {
+    "@id": "s:Distance",
+    "@type": "s:QuantitativeValue"
+   },
+   "bearing": {
+    "@type": "s:QuantitativeValue"
+   },
+   "value": {
+    "@id": "s:value"
+   },
+   "unitCode": {
+    "@id": "s:unitCode",
+    "@type": "@id"
+   },
+   "forecastOffice": {
+    "@type": "@id"
+   },
+   "forecastGridData": {
+    "@type": "@id"
+   },
+   "publicZone": {
+    "@type": "@id"
+   },
+   "county": {
+    "@type": "@id"
+   },
+   "observationStations": {
+    "@container": "@list",
+    "@type": "@id"
+   }
+  }
+ ],
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "https://api.weather.gov/stations/KHPN",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.70456,
+     41.06237
+    ]
+   },
+   "properties": {
+    "stationIdentifier": "KHPN",
+    "name": "White Plains - Westchester County Airport",
+    "timeZone": "America/New_York"
+   }
+  },
+  {
+   "id": "https://api.weather.gov/stations/KLGA",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.88,
+     40.77917
+    ]
+   },
+   "properties": {
+    "stationIdentifier": "KLGA",
+    "name": "New York, La Guardia Airport",
+    "timeZone": "America/New_York"
+   }
+  },
+  {
+   "id": "https://api.weather.gov/stations/KTEB",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.05667,
+     40.85889
+    ]
+   },
+   "properties": {
+    "stationIdentifier": "KTEB",
+    "name": "Teterboro, Teterboro Airport",
+    "timeZone": "America/New_York"
+   }
+  }
+ ]
+}

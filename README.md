@@ -188,8 +188,17 @@ Every consumer that renders data from this package must show a visible, linked c
 **"Weather data by Open-Meteo"** → <https://open-meteo.com/>. This is a **licence
 condition**, not decoration — removing it is a licensing regression, not a design choice.
 
-**An earlier doc claimed Open-Meteo's free tier is "non-commercial only". That was wrong
-and is withdrawn.** Do not reintroduce it.
+**The data licence and the free API's terms are two different things** (owner ruling,
+2026-11-27). The data is CC-BY 4.0, which allows commercial use with credit. The free API
+is for non-commercial use only, by Open-Meteo's own
+[terms](https://open-meteo.com/en/terms): "You may only use the free API services for
+non-commercial purposes." A commercial project needs Open-Meteo's paid plan or another
+source. An earlier version of this section said the opposite; it was wrong.
+
+The replacement engine, on US government sources that are free for any lawful purpose, is
+designed in
+[`docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`](docs/superpowers/specs/2026-11-27-one-weather-engine-design.md).
+It is not built yet.
 
 This package is headless and cannot render the credit itself, so the obligation sits with
 each consumer.

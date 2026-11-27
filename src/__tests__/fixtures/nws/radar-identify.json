@@ -1,0 +1,149 @@
+{
+ "objectId": 0,
+ "name": "Pixel",
+ "value": "91, 165, 202, 255",
+ "location": {
+  "x": -8210925.6409118585,
+  "y": 5016767.664541268,
+  "spatialReference": {
+   "wkid": 102100,
+   "latestWkid": 3857
+  }
+ },
+ "properties": {
+  "Values": [
+   "90 185 193 255",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "96 116 167 255",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "0 0 0 0",
+   "83 106 164 255",
+   "90 185 193 255",
+   "86 149 193 255",
+   "86 202 176 255"
+  ]
+ },
+ "catalogItems": {
+  "features": [
+   {
+    "attributes": {
+     "idp_validtime": 1795781758000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795783453000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795785963000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795786457000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795786784000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795782232000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795787277000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795785582000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795787636000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795785121000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795784753000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795784269000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795783916000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795783095000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795782608000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795781400000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795780911000
+    }
+   },
+   {
+    "attributes": {
+     "idp_validtime": 1795780567000
+    }
+   }
+  ]
+ },
+ "catalogItemVisibilities": [
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ]
+}
