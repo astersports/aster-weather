@@ -66,8 +66,8 @@ export async function quickStart(): Promise<string> {
 ```
 
 `getWeather(coords, opts)` returns a `WeatherReport`, or `null` when the point is invalid or
-outside US coverage. Each part of the report (`now`, `hourly`, `daily`, `alerts`, `radar`,
-`sun`) can be `null` on its own when that part could not be answered.
+outside US coverage. Each part of the report (`now`, `hourly`, `daily`, `alerts`,
+`alertsReading`, `radar`, `sun`) can be `null` on its own when that part could not be answered.
 
 ## 4. What each function returns
 

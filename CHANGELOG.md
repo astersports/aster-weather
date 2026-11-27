@@ -12,9 +12,12 @@ bump); **minor** = additive; **patch** = behavior-preserving fix.
 **Additive.** Alert lists now say when they were fetched and whether they are stale, and a clock that steps back no longer keeps a cached reading fresh. The only runtime change in `dist/` is those two fixes; dev dependencies are updated.
 
 ### Added
-- **`getAlertsReading(coords, opts)`** returns `AlertsReading | null`: `alerts`, `fetchedAt` (epoch ms, when the list was fetched) and `stale` (`true` when a refresh failed and this is the earlier list, still inside `ALERT_MAX_STALE_MS`). `null` means outside coverage, or the alerts request failed with no list young enough to serve.
+- **`getAlertsReading(coords, opts)`** returns `AlertsReading | null`: `alerts`, `fetchedAt` (epoch ms, when the list was fetched) and `stale` (`true` when a refresh failed and this is the earlier list, still inside `ALERT_MAX_STALE_MS`). `null` means outside coverage, or the alerts request failed with no list young enough to serve. Its `onError` label is `getAlerts`.
 - **`AlertsReading`**, the type of that result.
 - **`WeatherReport.alertsReading: AlertsReading | null`**, beside `alerts`, which keeps its shape. `getAlerts` keeps its shape too, and its `onError` label is still `getAlerts`.
+
+### Can break a build
+- **`WeatherReport` gained the required field `alertsReading`.** Code that constructs a `WeatherReport` object literal must add it. Nothing in this package's consumers builds one.
 
 ### Fixed
 - **B-018:** a list served after a failed refresh is no longer indistinguishable from a fresh one; read `stale` from `getAlertsReading` or `WeatherReport.alertsReading`.
