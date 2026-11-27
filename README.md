@@ -17,7 +17,7 @@ automatically).
   grid and alerts come from the National Weather Service API (`api.weather.gov`). Radar comes
   from NOAA's map service (`mapservices.weather.noaa.gov`). Sun times come from the NWS point
   data. The moon is calculated in this package.
-- **Readings are labelled.** Station readings, forecasts and the event reading carry a `Stamp` (section 5). A radar answer carries its frame times instead (section 9). Alerts, sun times and the moon are dated by their own fields.
+- **Readings are labelled.** Station readings, forecasts and the event reading carry a `Stamp` (section 5). A radar answer carries its frame times instead (section 9). Alerts and sun times are dated by their own fields, and the moon by the time passed to `getMoon`.
 - **The engine never throws.** A failed part becomes `null`, a stale reading or an empty list.
 - **Headless.** The engine draws nothing. The Sky icons are React, and `react` is an optional peer.
 - **Not here yet.** See section 17 for the parts still to come.

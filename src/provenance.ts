@@ -8,7 +8,7 @@ import type { WeatherStore } from "./store.js";
 /** `observed` = a station measurement; `forecast` = the official model forecast. */
 export type ReadingKind = "observed" | "forecast";
 
-/** What every engine reading carries so a consumer can label it. */
+/** What a station reading, a forecast or an event reading carries, so a consumer can label it. */
 export interface Stamp {
   kind: ReadingKind;
   /** Epoch ms the reading is for (observation or forecast hour). */
