@@ -1306,3 +1306,160 @@ describe("B-011 — a failed radar read is remembered for one minute", () => {
     expect(n).not.toHaveProperty("rainSource");
   });
 });
+
+// ---------------------------------------------------------------------------
+// B-013: a radar claim checks the frame's age when the claim is made
+// ---------------------------------------------------------------------------
+
+/** A green newest frame whose validtime is `ageMin` minutes before `t`. */
+const greenFrameAge = (t: number, ageMin: number) => ok(identify(["30 200 30 255"], [t - ageMin * MIN]));
+
+/**
+ * Route the radar's identify calls to `radar()` (read at each call), and every
+ * other URL to the healthy engine. Returns the fetch to hand to the caller.
+ */
+function feedRadar(base: { fetchImpl: FetchImpl; calls: string[] }, radar: () => Reply): FetchImpl {
+  return async (url, init) => {
+    if (!url.startsWith(RADAR_PREFIX)) return base.fetchImpl(url, init);
+    base.calls.push(url);
+    const r = radar();
+    return { ok: r.status < 300, status: r.status, json: async () => r.body };
+  };
+}
+const radarCallsIn = (calls: string[]) => calls.filter((u) => u.startsWith(RADAR_PREFIX));
+
+describe("B-013 — rainClaimFrom checks each bridge frame's age against now", () => {
+  const green = (ageMin: number) => ({ at: NOW - ageMin * MIN, intensity: "rain" as const });
+  const dryFrame = (ageMin: number) => ({ at: NOW - ageMin * MIN, intensity: "none" as const });
+
+  it("a green newest frame 19 minutes old claims at now, stamped with its own frame", () => {
+    const f = green(19);
+    expect(rainClaimFrom(radarOf([f]), 60, NOW)).toEqual({ intensity: "rain", at: NOW - 19 * MIN });
+  });
+
+  it("a green newest frame exactly 20 minutes old still claims", () => {
+    expect(rainClaimFrom(radarOf([green(20)]), 60, NOW)).toEqual({ intensity: "rain", at: NOW - 20 * MIN });
+  });
+
+  it("a green newest frame 20 minutes plus 1 ms old does not claim", () => {
+    const f = { at: NOW - 20 * MIN - 1, intensity: "rain" as const };
+    expect(rainClaimFrom(radarOf([f]), 60, NOW)).toBeNull();
+  });
+
+  it("the newest frame dry and recent, the second green and 21 minutes old: no claim", () => {
+    expect(rainClaimFrom(radarOf([dryFrame(2), green(21)]), 60, NOW)).toBeNull();
+  });
+
+  it("the newest frame dry and recent, the second green and 15 minutes old: claims with that frame's time", () => {
+    expect(rainClaimFrom(radarOf([dryFrame(2), green(15)]), 60, NOW)).toEqual({
+      intensity: "rain",
+      at: NOW - 15 * MIN,
+    });
+  });
+
+  it("a too-old newest green frame is skipped, and the recent dry second frame does not claim", () => {
+    expect(rainClaimFrom(radarOf([green(25), dryFrame(22)]), 60, NOW)).toBeNull();
+  });
+
+  it("without now, the old frame still claims: the read-time rule is unchanged", () => {
+    const old = green(21);
+    expect(rainClaimFrom(radarOf([dryFrame(2), old]), 60)).toEqual({ intensity: "rain", at: old.at });
+  });
+});
+
+describe("B-013 — applyRadarToNow and applyRadarToToday take the clock", () => {
+  const rainAt = (ageMin: number) => radarOf([{ at: NOW - ageMin * MIN, intensity: "rain" }]);
+
+  it("an aged-out frame leaves a dry reading as the same object", () => {
+    const reading = dry();
+    expect(applyRadarToNow(reading, rainAt(21), NOW)).toBe(reading);
+  });
+
+  it("a live frame upgrades the reading, as before", () => {
+    const out = applyRadarToNow(dry(), rainAt(19), NOW);
+    expect(out).toMatchObject({ condition: "light-rain", rainSource: "radar", radarAt: NOW - 19 * MIN });
+  });
+
+  it("an aged-out frame leaves today's dry entry as the same array", () => {
+    const days = [day(TODAY), day(TOMORROW)];
+    expect(applyRadarToToday(days, rainAt(21), TODAY, NOW)).toBe(days);
+  });
+
+  it("a live frame upgrades today's entry, and only today's", () => {
+    const days = [day(TODAY), day(TOMORROW)];
+    const out = applyRadarToToday(days, rainAt(19), TODAY, NOW);
+    expect(out[0]).toMatchObject({ dayCondition: "light-rain", rainSource: "radar" });
+    expect(out[1]).toBe(days[1]);
+  });
+});
+
+describe("B-013 through getNow: a cached answer cannot carry an aged frame's claim", () => {
+  it("wet at 19 minutes; every refresh then fails; at 14 minutes later the reading is dry again", async () => {
+    let at = NOW;
+    const base = healthy();
+    // Each read builds its frame from the clock then: a frame 19 minutes old at the read.
+    const fetchImpl = feedRadar(base, () => (at === NOW + 14 * MIN ? fail(500) : greenFrameAge(at, 19)));
+    const first = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(first).toMatchObject({ condition: "light-rain", rainSource: "radar", radarAt: NOW - 19 * MIN });
+
+    at = NOW + 30_000; // the frame is 19.5 minutes old: the cached answer still claims
+    const thirtySeconds = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(thirtySeconds).toMatchObject({ rainSource: "radar", radarAt: NOW - 19 * MIN });
+    expect(radarCallsIn(base.calls)).toHaveLength(1);
+
+    at = NOW + 14 * MIN; // the frame is 33 minutes old; the radar is asked, fails, and the answer is served stale
+    const later = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(radarCallsIn(base.calls), "the cached answer was not refreshed by a successful read").toHaveLength(2);
+    expect(later).not.toHaveProperty("rainSource");
+    expect(later).not.toHaveProperty("radarAt");
+    const plain = await settle(getNow(COORDS, { fetchImpl: healthy().fetchImpl, now: () => at }));
+    expect(later).toEqual(plain);
+    expect(later!.condition).toBe("mostly-cloudy");
+  });
+
+  it("control: a radar that keeps answering with a frame one minute old is wet at T and at T + 14 minutes", async () => {
+    let at = NOW;
+    const base = healthy();
+    const fetchImpl = feedRadar(base, () => greenFrameAge(at, 1));
+    const t0 = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    at = NOW + 14 * MIN;
+    const t14 = await settle(getNow(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(t0).toMatchObject({ rainSource: "radar" });
+    expect(t14).toMatchObject({ rainSource: "radar", radarAt: NOW + 13 * MIN });
+    expect(radarCallsIn(base.calls)).toHaveLength(2);
+  });
+});
+
+describe("B-013 through getDaily: today's entry takes the clock too", () => {
+  it("wet at 19 minutes; every refresh then fails; at 14 minutes later today is dry again", async () => {
+    let at = DAY_AT;
+    const base = dailyRouter();
+    const fetchImpl = feedRadar(base, () => (at === DAY_AT + 14 * MIN ? fail(500) : greenFrameAge(at, 19)));
+    const first = await settle(getDaily(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(first!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar" });
+
+    at = DAY_AT + 30_000;
+    const thirtySeconds = await settle(getDaily(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(thirtySeconds!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar" });
+
+    at = DAY_AT + 14 * MIN;
+    const later = await settle(getDaily(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(radarCallsIn(base.calls)).toHaveLength(2);
+    const today = later!.days.find((d) => d.date === VENUE_TODAY)!;
+    expect(today).not.toHaveProperty("rainSource");
+    expect(today.dayCondition).toBe("mostly-cloudy");
+    const plain = await settle(getDaily(COORDS, { fetchImpl: dailyRouter().fetchImpl, now: () => at }));
+    expect(later).toEqual(plain);
+  });
+
+  it("control: a radar that keeps answering with a frame one minute old is wet at T and at T + 14 minutes", async () => {
+    let at = DAY_AT;
+    const base = dailyRouter();
+    const fetchImpl = feedRadar(base, () => greenFrameAge(at, 1));
+    const t0 = await settle(getDaily(COORDS, { fetchImpl, now: () => at, radar: true }));
+    at = DAY_AT + 14 * MIN;
+    const t14 = await settle(getDaily(COORDS, { fetchImpl, now: () => at, radar: true }));
+    expect(t0!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar" });
+    expect(t14!.days.find((d) => d.date === VENUE_TODAY)).toMatchObject({ rainSource: "radar" });
+  });
+});

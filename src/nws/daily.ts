@@ -183,7 +183,8 @@ export async function getDaily(
   const result = await readDaily(coords, point, opts, now);
   if (!result) return null;
   if (radar === null || today === null) return result;
-  return { ...result, days: applyRadarToToday(result.days, await radar, today) };
+  // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
+  return { ...result, days: applyRadarToToday(result.days, await radar, today, now()) };
 }
 
 /**

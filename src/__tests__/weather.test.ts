@@ -289,3 +289,64 @@ describe("getWeather: the one-call report", () => {
     expect(localDay(NOW, "Not/AZone")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// B-013 through getWeather: the report's now and today take the same clock
+// ---------------------------------------------------------------------------
+
+/** A green newest frame whose validtime is `ageMin` minutes before `t`, as a radar reply. */
+function greenFrameAgeReply(t: number, ageMin: number) {
+  return ok({
+    value: "NoData",
+    properties: { Values: ["30 200 30 255"] },
+    catalogItems: { features: [{ attributes: { idp_validtime: t - ageMin * 60_000 } }] },
+  });
+}
+
+/** Route the radar's calls to `radar()` (read at each call) and every other URL to the healthy engine. */
+function feedRadarWeather(radarReply: () => Reply) {
+  const base = healthy({}, dryForecast());
+  const fetchImpl: FetchImpl = async (url, init) => {
+    if (!isRadar(url)) return base.fetchImpl(url, init);
+    base.calls.push(url);
+    const r = radarReply();
+    return { ok: r.status < 300, status: r.status, json: async () => r.body };
+  };
+  return { calls: base.calls, fetchImpl };
+}
+
+describe("B-013 through getWeather: now and today take the clock of the call", () => {
+  it("wet at 19 minutes; a refresh fails at 14 minutes later and both now and today are dry again", async () => {
+    let at = NOW;
+    const feed = feedRadarWeather(() => (at === NOW + 14 * 60_000 ? fail(500) : greenFrameAgeReply(at, 19)));
+    const first = (await getWeather(C, { fetchImpl: feed.fetchImpl, now: () => at }))!;
+    expect(first.now!.rainSource).toBe("radar");
+    expect(first.daily!.days[0]!.rainSource).toBe("radar");
+
+    at = NOW + 30_000; // 19.5 minutes old: the cached answer still claims
+    const thirtySeconds = (await getWeather(C, { fetchImpl: feed.fetchImpl, now: () => at }))!;
+    expect(thirtySeconds.now!.rainSource).toBe("radar");
+    expect(thirtySeconds.daily!.days[0]!.rainSource).toBe("radar");
+
+    at = NOW + 14 * 60_000; // 33 minutes old: the refresh fails and the stale answer carries no claim
+    const later = (await getWeather(C, { fetchImpl: feed.fetchImpl, now: () => at }))!;
+    expect(feed.calls.filter(isRadar)).toHaveLength(2);
+    expect(later.now).not.toHaveProperty("rainSource");
+    expect(later.now).not.toHaveProperty("radarAt");
+    expect(later.daily!.days[0]).not.toHaveProperty("rainSource");
+    expect(later.daily!.days[0]).not.toHaveProperty("radarAt");
+    expect(isPrecipitation(later.daily!.days[0]!.dayCondition)).toBe(false);
+  });
+
+  it("control: a radar that keeps answering with a frame one minute old is wet at T and at T + 14 minutes", async () => {
+    let at = NOW;
+    const feed = feedRadarWeather(() => greenFrameAgeReply(at, 1));
+    const t0 = (await getWeather(C, { fetchImpl: feed.fetchImpl, now: () => at }))!;
+    at = NOW + 14 * 60_000;
+    const t14 = (await getWeather(C, { fetchImpl: feed.fetchImpl, now: () => at }))!;
+    expect(t0.now!.rainSource).toBe("radar");
+    expect(t14.now!.rainSource).toBe("radar");
+    expect(t14.daily!.days[0]!.rainSource).toBe("radar");
+    expect(feed.calls.filter(isRadar)).toHaveLength(2);
+  });
+});

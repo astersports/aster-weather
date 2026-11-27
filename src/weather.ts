@@ -64,6 +64,8 @@ export async function getWeather(
   ]);
 
   const today = point.timeZone === null ? null : localDay(nowMs, point.timeZone);
+  // The radar claim is made now, after every part has loaded: a frame's age is taken at that moment (B-013).
+  const claimAt = (opts.now ?? Date.now)();
 
   return {
     place: {
@@ -73,11 +75,11 @@ export async function getWeather(
       city: point.city,
       state: point.state,
     },
-    now: now && radar ? applyRadarToNow(now, radar) : now,
+    now: now && radar ? applyRadarToNow(now, radar, claimAt) : now,
     hourly,
     daily:
       daily && radar && today !== null
-        ? { ...daily, days: applyRadarToToday(daily.days, radar, today) }
+        ? { ...daily, days: applyRadarToToday(daily.days, radar, today, claimAt) }
         : daily,
     alerts,
     radar,

@@ -57,6 +57,11 @@ const IDENTIFY_URL = `${NOAA_MAPS}/eventdriven/rest/services/radar/radar_base_re
  * is ignored everywhere: it cannot claim rain, and it is not "dry" either. The
  * same value bounds the "recent" window. Frames dated after `now` are kept, since
  * a device clock may run behind the radar's.
+ *
+ * The rule for a rain claim (B-013): radar never claims rain from a frame more
+ * than this old at the moment the claim is made. A radar answer is cached, so the
+ * age is checked again in `rainClaimFrom` with the caller's clock, not only when
+ * the radar was read.
  */
 export const MAX_FRAME_AGE_MS = 20 * 60_000;
 
@@ -192,6 +197,9 @@ export interface RainClaim {
  * reading and the daily cell, so they cannot disagree about the same sky.
  *
  * - Only the two newest frames count.
+ * - When `now` is given, a frame more than `MAX_FRAME_AGE_MS` older than `now`
+ *   cannot claim; the search moves on to the next bridge frame (B-013). Without
+ *   `now`, frames are not age-checked here (the read has already dropped old ones).
  * - `rain`, `heavy` and `storm` always claim.
  * - `light` claims only when humidity is at or above `SATURATED_HUMIDITY`.
  *   Absent humidity (`null` or `undefined`) means it does not claim.
@@ -200,10 +208,12 @@ export interface RainClaim {
 export function rainClaimFrom(
   radar: RadarRain | null | undefined,
   humidity: number | null | undefined,
+  now?: number,
 ): RainClaim | null {
   if (!radar) return null;
   const saturated = typeof humidity === "number" && humidity >= SATURATED_HUMIDITY;
   for (const frame of (radar.bridgeFrames ?? []).slice(0, BRIDGE_FRAMES)) {
+    if (now !== undefined && frameTooOld(frame, now)) continue;
     if (RAIN_FLOOR.has(frame.intensity)) return { intensity: frame.intensity, at: frame.at };
     if (frame.intensity === "light" && saturated) return { intensity: "light", at: frame.at };
   }
@@ -334,10 +344,10 @@ export function startRadarRain(coords: Coords, opts: EngineOptions = {}): Promis
  * the reading is dry and the radar claims rain. Never removes precipitation
  * and never changes any field other than `condition`, `rainSource` and `radarAt`.
  */
-export function applyRadarToNow(reading: NowReading, radar: RadarRain | null): NowReading {
+export function applyRadarToNow(reading: NowReading, radar: RadarRain | null, now?: number): NowReading {
   if (!radar) return reading;
   if (isPrecipitation(reading.condition)) return reading;
-  const claim = rainClaimFrom(radar, reading.humidity);
+  const claim = rainClaimFrom(radar, reading.humidity, now);
   if (!claim) return reading;
   return {
     ...reading,
@@ -357,13 +367,14 @@ export function applyRadarToToday(
   days: DayReading[],
   radar: RadarRain | null,
   today: string,
+  now?: number,
 ): DayReading[] {
   if (!radar) return days;
   const index = days.findIndex((d) => d.date === today);
   if (index < 0) return days;
   const day = days[index]!;
   if (isPrecipitation(day.dayCondition) || isPrecipitation(day.nightCondition)) return days;
-  const claim = rainClaimFrom(radar, null);
+  const claim = rainClaimFrom(radar, null, now);
   if (!claim) return days;
   const condition = radarCondition(claim.intensity, day.high);
   const updated: DayReading =

@@ -115,7 +115,8 @@ export async function getDaily(coords, opts = {}) {
         return null;
     if (radar === null || today === null)
         return result;
-    return { ...result, days: applyRadarToToday(result.days, await radar, today) };
+    // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
+    return { ...result, days: applyRadarToToday(result.days, await radar, today, now()) };
 }
 /**
  * The forecast from the cache, else from the last-good store. Neither copy

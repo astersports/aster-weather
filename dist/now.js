@@ -132,7 +132,9 @@ export async function getNow(coords, opts = {}) {
     const reading = await readNow(coords, opts);
     if (!reading)
         return null;
-    return radar ? applyRadarToNow(reading, await radar) : reading;
+    // The clock is read when the claim is made, so a frame that has aged out by then cannot claim (B-013).
+    const now = opts.now ?? Date.now;
+    return radar ? applyRadarToNow(reading, await radar, now()) : reading;
 }
 /**
  * The reading from the cache, else from the last-good store. Neither copy

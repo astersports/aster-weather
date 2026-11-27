@@ -28,6 +28,11 @@ export interface RadarRain {
  * is ignored everywhere: it cannot claim rain, and it is not "dry" either. The
  * same value bounds the "recent" window. Frames dated after `now` are kept, since
  * a device clock may run behind the radar's.
+ *
+ * The rule for a rain claim (B-013): radar never claims rain from a frame more
+ * than this old at the moment the claim is made. A radar answer is cached, so the
+ * age is checked again in `rainClaimFrom` with the caller's clock, not only when
+ * the radar was read.
  */
 export declare const MAX_FRAME_AGE_MS: number;
 /**
@@ -76,12 +81,15 @@ export interface RainClaim {
  * reading and the daily cell, so they cannot disagree about the same sky.
  *
  * - Only the two newest frames count.
+ * - When `now` is given, a frame more than `MAX_FRAME_AGE_MS` older than `now`
+ *   cannot claim; the search moves on to the next bridge frame (B-013). Without
+ *   `now`, frames are not age-checked here (the read has already dropped old ones).
  * - `rain`, `heavy` and `storm` always claim.
  * - `light` claims only when humidity is at or above `SATURATED_HUMIDITY`.
  *   Absent humidity (`null` or `undefined`) means it does not claim.
  * - `unknown-echo` and `none` never claim.
  */
-export declare function rainClaimFrom(radar: RadarRain | null | undefined, humidity: number | null | undefined): RainClaim | null;
+export declare function rainClaimFrom(radar: RadarRain | null | undefined, humidity: number | null | undefined, now?: number): RainClaim | null;
 /**
  * The radar's own budget for one request, in ms. The parish port asks once with
  * this budget. A hung service costs one budget, not a retry on top of it.
@@ -113,14 +121,14 @@ export declare function startRadarRain(coords: Coords, opts?: EngineOptions): Pr
  * the reading is dry and the radar claims rain. Never removes precipitation
  * and never changes any field other than `condition`, `rainSource` and `radarAt`.
  */
-export declare function applyRadarToNow(reading: NowReading, radar: RadarRain | null): NowReading;
+export declare function applyRadarToNow(reading: NowReading, radar: RadarRain | null, now?: number): NowReading;
 /**
  * Add a radar rain claim to today's daily cell. Only the entry whose `date` is
  * `today` can change. A dry day gets the claim on `dayCondition`, or on
  * `nightCondition` when there is no day condition. The daily path has no
  * humidity, so blue echo never claims here. Other days are untouched.
  */
-export declare function applyRadarToToday(days: DayReading[], radar: RadarRain | null, today: string): DayReading[];
+export declare function applyRadarToToday(days: DayReading[], radar: RadarRain | null, today: string, now?: number): DayReading[];
 /** Test hook: clear every cached radar answer and every hold. */
 export declare function clearRadarCache(): void;
 //# sourceMappingURL=radar.d.ts.map
