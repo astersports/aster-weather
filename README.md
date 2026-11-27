@@ -29,7 +29,7 @@ build step on install. Never pin a branch or a bare SHA.
 // package.json
 {
   "dependencies": {
-    "@aster/weather": "github:astersports/aster-weather#v0.6.0"
+    "@aster/weather": "github:astersports/aster-weather#v0.7.0"
   }
 }
 ```
@@ -49,7 +49,7 @@ here."*
 
 This package has **no NWS fallback, no persisted cross-process cache, no radar rung, and no
 `readingKind` field.** Do not document or market it as if it did. When the ladder is
-upstreamed it must take a version **later than `v0.7.0`**, which is already reserved (see
+upstreamed it must take a version **later than `v0.7.0`**, which has shipped (see
 [Versioning](#versioning)).
 
 What it does have is the resilience chain below — a different and narrower guarantee.
@@ -98,6 +98,27 @@ Every measurement (`temperature`, `precipitationProbability`, `windSpeed`, `wind
 is `number | null`. `null` means Open-Meteo reported no value for that slot. Warning flags
 (`isRainWarning` / `isSevereWarning`) treat `null` as *unknown* and do not fire off a
 missing reading. **Render `null` as "—" / "N/A", never as `0`.**
+
+Since v0.7.0 the same rule covers `weatherCode`, `icon` and `description`. A missing,
+`null` or non-numeric Open-Meteo code gives `null` for all three. A real `0` stays clear
+sky. A number that is not a WMO code keeps its number, with `icon` and `description`
+`null`. Guard the icon before you render it:
+
+```tsx
+{w.icon && (
+  <SkyPanel condition={w.icon} isDay={w.isDay}><WeatherIcon condition={w.icon} isDay={w.isDay} /></SkyPanel>
+)}
+```
+
+> ### ⚠ Breaking from v0.6.x
+> **`weatherCode`, `icon` and `description` can now be `null`.** Before v0.7.0 a missing
+> code was reported as `0` ("Clear sky"). Migrate:
+> - Guard on `icon !== null` before rendering `<WeatherIcon>` or `<SkyPanel>`.
+> - Render `—` for a `null` `description`, never "Clear sky".
+> - Treat a `null` `weatherCode` as unknown. Do not compare it with `0`.
+>
+> `weatherInfoOrNull(code)` is the new nullable lookup. `getWeatherInfo` is unchanged.
+> It ships as a 0.x *minor*, but it is a **breaking** change; describe it that way.
 
 ### Time is absolute (epoch ms)
 
@@ -209,10 +230,11 @@ each consumer.
 additive · **patch** = behaviour-preserving fix. On 0.x a break ships as a minor — and is called "breaking" anyway (as v0.6.0 was). Full history in
 [CHANGELOG.md](./CHANGELOG.md).
 
-**`v0.7.0` is already reserved** for the breaking nullable-`weatherCode` release (**CR-1**),
-which closes the `?? 0` fabrication seam. There is an explicit **R-2 split: icons =
-v0.6.0, engine = v0.7.0**. Anything else needing a version — including upstreaming the
-ladder and provenance from `st-patricks-armonk` — **must take a later number.**
+**`v0.7.0` shipped the nullable weather code** (**CR-1**): a missing code is `null`, not
+clear sky. The R-2 split stands: icons = v0.6.0, engine = v0.7.0. The new engine
+(see the [design doc](./docs/superpowers/specs/2026-11-27-one-weather-engine-design.md))
+takes `v0.8.0` and later, and is not built yet. Anything else needing a version,
+including upstreaming the ladder and provenance from `st-patricks-armonk`, takes a later number.
 
 A **minor or major tag is held** until the merge commit carries `[release-approved]`
 (`.github/workflows/auto-tag.yml`). A release that carries design or shape cannot ship by

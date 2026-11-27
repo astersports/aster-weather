@@ -59,6 +59,19 @@ export function getWeatherInfo(code: number): WmoInfo {
   return WMO_CODES[code] ?? { description: "Unknown", icon: "partly-cloudy" };
 }
 
+/**
+ * Nullable lookup (v0.7.0). A missing code (`null`/`undefined`), or a number
+ * that is not a WMO code, returns `null` — never a fabricated icon or
+ * description. Use this for every loader; {@link getWeatherInfo} stays for
+ * callers that want the legacy neutral fallback.
+ */
+export function weatherInfoOrNull(
+  code: number | null | undefined,
+): WmoInfo | null {
+  if (code === null || code === undefined) return null;
+  return WMO_CODES[code] ?? null;
+}
+
 /** Emoji per WMO code — for plain-text / email / non-SVG surfaces. */
 export const WMO_EMOJI: Record<number, string> = {
   0: "☀️",

@@ -11,7 +11,7 @@ export type { Coords, HourlyForecast, NowcastPoint, EventWeather, CurrentWeather
 export { FORECAST_DAYS, FETCH_TIMEOUT_MS, FETCH_RETRY_COUNT, FETCH_RETRY_BACKOFF_MS, MAX_FORECAST_HOUR_GAP_MS, HOURLY_MATCH_WINDOW_MS, DEFAULT_FORECAST_WINDOW_DAYS, SEVERE_WIND_MPH, SEVERE_GUST_MPH, } from "./types.js";
 export type { CacheBehavior } from "./cache.js";
 export type { WmoInfo } from "./wmo.js";
-export { WMO_CODES, getWeatherInfo, WMO_EMOJI, emojiForCode, WMO_LABELS, labelForCode, rainWord, } from "./wmo.js";
+export { WMO_CODES, getWeatherInfo, weatherInfoOrNull, WMO_EMOJI, emojiForCode, WMO_LABELS, labelForCode, rainWord, } from "./wmo.js";
 export { parseOpenMeteoLocalTime, isValidCoord } from "./helpers.js";
 export { fetchForecast, getWeatherForTime, getWeatherForEvent, clearForecastCache, } from "./forecast.js";
 export { getNowcast, clearNowcastCache } from "./nowcast.js";

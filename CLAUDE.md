@@ -36,8 +36,8 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 
 1. **Measurements are `number | null`; a missing value is never fabricated as `0`.** `null` =
    unknown; warning flags do not fire on `null`; consumers render `—`, never `0`.
-2. **`weatherCode` is the one exception, and it is a known seam** — still `number`, `?? 0` → "clear".
-   Do not copy that pattern to any other field; closing it is the reserved v0.7.0 release (§5).
+2. **`weatherCode`, `icon` and `description` are `null` when no usable code was reported.** Never write
+   `?? 0` for a code; a real `0` stays clear sky.
 3. **Hourly timestamps are absolute epoch-ms.** `fetchForecast` and `getNowcast` requests carry
    `&timeformat=unixtime`; match hours by epoch arithmetic, never by parsing local time strings.
    (`current`/`daily` request `timezone=auto` and parse sunrise/sunset with `parseOpenMeteoLocalTime` — never use that path for hour matching.)
@@ -65,8 +65,8 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
   the same commit. CI rebuilds and fails on any `dist/` drift.
 - **SemVer:** major = shape / icon-key / behaviour break · minor = additive · patch =
   behaviour-preserving fix. On 0.x a break ships as a minor — **call it "breaking" anyway**.
-- **`v0.7.0` is reserved** for the nullable-`weatherCode` release (CR-1). Upstreaming the ladder
-  and provenance takes a later number — never claim v0.7.0 for it.
+- **`v0.7.0` was the nullable-`weatherCode` release.** The engine on US government sources takes
+  `v0.8.0` and later — `docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`.
 - **Tags are cut by `auto-tag.yml` on merge.** A patch tags automatically; a minor/major is **held**
   until the merge commit carries `[release-approved]` (or a deliberate `force` dispatch). That
   hold is the feature — never add the marker or dispatch `force` unless the owner asked for that release.

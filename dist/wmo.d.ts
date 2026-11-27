@@ -23,6 +23,13 @@ export declare const WMO_CODES: Record<number, WmoInfo>;
  * misleading "clear" for unknown codes (St. Patrick choice, preserved).
  */
 export declare function getWeatherInfo(code: number): WmoInfo;
+/**
+ * Nullable lookup (v0.7.0). A missing code (`null`/`undefined`), or a number
+ * that is not a WMO code, returns `null` — never a fabricated icon or
+ * description. Use this for every loader; {@link getWeatherInfo} stays for
+ * callers that want the legacy neutral fallback.
+ */
+export declare function weatherInfoOrNull(code: number | null | undefined): WmoInfo | null;
 /** Emoji per WMO code — for plain-text / email / non-SVG surfaces. */
 export declare const WMO_EMOJI: Record<number, string>;
 /** Emoji for a code with a thermometer fallback. */

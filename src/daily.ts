@@ -22,7 +22,7 @@ import {
   roundOrNull,
 } from "./helpers.js";
 import { WeatherCache } from "./cache.js";
-import { getWeatherInfo } from "./wmo.js";
+import { weatherInfoOrNull } from "./wmo.js";
 
 const API_BASE = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
@@ -63,7 +63,7 @@ interface OpenMeteoDaily {
     precipitation_probability_max?: (number | null)[];
     wind_speed_10m_max?: (number | null)[];
     uv_index_max?: (number | null)[];
-    weather_code?: number[];
+    weather_code?: unknown[];
     sunrise?: string[];
     sunset?: string[];
   };
@@ -87,8 +87,9 @@ export async function getDailyForecast(
         throw new Error("daily shape");
       }
       const forecasts: DailyForecast[] = d.time.map((date, i) => {
-        const weatherCode = d.weather_code?.[i] ?? 0;
-        const info = getWeatherInfo(weatherCode);
+        const raw = d.weather_code?.[i];
+        const weatherCode = typeof raw === "number" ? numOrNull(raw) : null;
+        const info = weatherInfoOrNull(weatherCode);
         return {
           date,
           high: roundOrNull(d.temperature_2m_max?.[i]),
@@ -97,8 +98,8 @@ export async function getDailyForecast(
           windSpeedMax: roundOrNull(d.wind_speed_10m_max?.[i]),
           uvIndexMax: numOrNull(d.uv_index_max?.[i]),
           weatherCode,
-          icon: info.icon,
-          description: info.description,
+          icon: info?.icon ?? null,
+          description: info?.description ?? null,
           sunrise: d.sunrise?.[i] ? parseOpenMeteoLocalTime(d.sunrise[i]) : "",
           sunset: d.sunset?.[i] ? parseOpenMeteoLocalTime(d.sunset[i]) : "",
         };

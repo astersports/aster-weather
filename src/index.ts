@@ -40,6 +40,7 @@ export type { WmoInfo } from "./wmo.js";
 export {
   WMO_CODES,
   getWeatherInfo,
+  weatherInfoOrNull,
   WMO_EMOJI,
   emojiForCode,
   WMO_LABELS,
