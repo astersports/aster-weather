@@ -52,8 +52,11 @@ any lawful purpose", provided nothing implies NWS endorsement.
    `fetchedAt` and `stale`. Past a maximum age it is dropped, never shown.
 3. One icon for every condition the forecast can report, by day and by night, a wind
    modifier, and a glyph for every measurement.
-4. All four consumers on the engine and the icons; the duplicate engines deleted.
-5. The engine contract in CLAUDE.md §3 holds unchanged.
+4. Ready-made page parts, so every project shows the same weather screens without
+   drawing its own (owner, 2026-11-27).
+5. All four consumers on the engine, the icons and the parts; the duplicate engines
+   deleted.
+6. The engine contract in CLAUDE.md §3 holds unchanged.
 
 ## Non-goals
 
@@ -155,6 +158,28 @@ keywords to a condition, tested against the keyword list recorded as a fixture.
   server output carries no animation nodes.
 - The mock-up above is the rendering to match, once the owner approves it.
 
+### Page parts (`@aster/weather/ui`)
+
+Owner decision, 2026-11-27: the package ships the weather screens, not just the data.
+
+- A third subpath. React, like `/icons`; `react` stays an optional peer.
+- The parts: `WeatherChip` (one line beside a game or event), `WeatherHero`,
+  `WeatherTiles`, `HourlyStrip`, `DailyList`, `AlertBanner`, `RainNow`, `SunMoon`,
+  `HeatCold`, `Outlooks`, `StationTrend`, and `WeatherPage`, which composes them.
+- **Parts render; they do not fetch.** Each takes the engine's own shapes as props, so
+  the same part works with data fetched in a browser (the App) or on a server (parish,
+  demo). A missing part of the data renders nothing.
+- **One static stylesheet**, `@aster/weather/ui/styles.css`, with every class prefixed
+  `aw-`. It must exist at server-render time, so it is a file the consumer imports, not
+  a style injected on mount.
+- **Each project supplies its own look** through CSS variables with fallbacks
+  (`--aw-surface`, `--aw-text`, `--aw-muted`, `--aw-line`, `--aw-accent`); type inherits
+  from the host page. The parts carry no light or dark logic of their own.
+- The Sky panel keeps its own palette, as today.
+- Server output matches first client render (no clock or storage read during render).
+- Interactive targets are 44px or larger; lists are real lists; every icon that carries
+  meaning has a label.
+
 ### Alerts
 
 Shown verbatim: the NWS `event`, `headline`, times and sender. NWS permits its name to
@@ -168,9 +193,11 @@ identify unaltered NWS content. Severity maps to three visual levels.
 - **nova-select:** `server/weather.ts` moves to the package's NWS functions.
 - **aster-io:** the product mock uses the Sky icons and stops naming Open-Meteo.
 
-How far each project's screens change waits on open item 1. Each consumer's own weather
-rules change in the same PR. An Open-Meteo credit is removed only when that project
-renders no Open-Meteo data.
+Each project places the package's parts where its weather shows today, in its own PR,
+with a before-and-after capture. Each consumer's own weather rules change in the same
+PR. An Open-Meteo credit is removed only when that project renders no Open-Meteo data.
+No NWS credit is added anywhere, following the owner's 2026-10-30 ruling; the one place
+the NWS name appears is as the issuer of an alert.
 
 ### Docs in this repo
 
@@ -184,7 +211,8 @@ is the owner ruling that §2 requires.
 | `v0.7.0` | Nullable weather code (reserved) | Breaking |
 | `v0.8.0` | Engine: now, hourly with the grid, daily, alerts, radar, sun and moon, event function, provenance, store | Additive |
 | `v0.9.0` | Icons and glyphs | Breaking for exhaustive switches on the icon key |
-| `v0.10.0` | UV, outlooks, heat stress, air quality | Additive |
+| `v0.10.0` | Page parts for everything in `v0.8.0` | Additive |
+| `v0.11.0` | UV, outlooks, heat stress, air quality, and their parts | Additive |
 | `v1.0.0` | Open-Meteo fetchers removed, after all four consumers migrate | Breaking |
 
 ## Left to the builder
@@ -196,14 +224,15 @@ is the owner ruling that §2 requires.
 
 ## Open items
 
-1. **Owner: who draws the screens.** Either the package also ships ready-made page parts
-   (hero, hourly strip, 7-day list, alert banner, tiles), or each project draws its own
-   from the shared data and icons.
-2. **Owner: alert wording.** The App ruling "leave out the wording and credit" was made
-   for forecasts. An official alert has to show its official name.
-3. **Owner: credits.** Whether any project shows an NWS credit.
-4. **Radar from a browser.** Cross-origin access to NOAA's map service is unverified. If
+1. **Owner: alert wording.** The mock-up shows an alert under its official name with the
+   National Weather Service named as issuer. The App ruling "leave out the wording and
+   credit" was made for forecasts; approving the mock-up settles this for alerts.
+2. **Radar from a browser.** Cross-origin access to NOAA's map service is unverified. If
    it refuses, radar is server-only and the App gets none.
-5. **Unverified sources:** the radar loop picture, normal-for-the-date, and the
+3. **Unverified sources:** the radar loop picture, normal-for-the-date, and the
    severe-storm point lookup. Each is dropped if it cannot be verified in the build.
-6. **NWS rate limits** are undisclosed.
+4. **NWS rate limits** are undisclosed.
+
+## Decided
+
+- **Who draws the screens** (owner, 2026-11-27): the package ships ready-made page parts.
