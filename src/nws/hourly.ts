@@ -12,8 +12,8 @@ import { conditionFromNwsIcon, type Condition } from "../condition.js";
 import { cToF, kmhToMph, mmToIn, mToMi } from "../units.js";
 import type { Coords } from "../types.js";
 import { getGrid, gridValueAt, type GridBlock } from "./grid.js";
-import { evictPoint, getPoint, type NwsPoint } from "./point.js";
-import { nwsJson } from "./http.js";
+import { getPoint, type NwsPoint } from "./point.js";
+import { fetchPeriods } from "./periods.js";
 
 /** One hour of the forecast. Every measurement is `null` when NWS gave none. */
 export interface HourReading {
@@ -152,23 +152,17 @@ async function fetchHourly(
   opts: EngineOptions,
   now: () => number,
 ): Promise<HourlyBody> {
-  let current = first;
-  let body = await nwsJson(current.forecastHourly, opts);
-  if (body === null) {
-    // The point may have moved to another grid: look it up afresh, once.
-    evictPoint(coords);
-    const fresh = await getPoint(coords, opts);
-    if (!fresh) throw new Error("NWS hourly: point gone after a 404");
-    current = fresh;
-    body = await nwsJson(current.forecastHourly, opts);
-    if (body === null) throw new Error("NWS hourly: forecast 404 twice");
-  }
-  const props = rec(rec(body)?.properties);
-  if (!props || !Array.isArray(props.periods)) throw new Error("NWS hourly: no periods");
+  const { point: current, props, periods } = await fetchPeriods(
+    coords,
+    first,
+    opts,
+    (p) => p.forecastHourly,
+    "NWS hourly",
+  );
 
   const layers = await getGrid(coords, opts);
   const hours: HourReading[] = [];
-  for (const raw of props.periods) {
+  for (const raw of periods) {
     const p = rec(raw);
     if (!p) continue;
     const timestamp = isoMs(p.startTime);
