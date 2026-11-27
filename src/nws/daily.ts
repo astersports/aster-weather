@@ -13,6 +13,7 @@ import type { Coords } from "../types.js";
 import { getPoint, type NwsPoint } from "./point.js";
 import { fetchPeriods } from "./periods.js";
 import { applyRadarToToday, getRadarRain } from "../radar.js";
+import { localDay } from "../localDay.js";
 
 /** One calendar day of the forecast. Every measurement is `null` when NWS gave none. */
 export interface DayReading {
@@ -210,17 +211,8 @@ async function withRadarToday(
   now: () => number,
 ): Promise<DailyResult> {
   if (opts.radar !== true || point.timeZone === null) return result;
-  let today: string;
-  try {
-    today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: point.timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(now()));
-  } catch {
-    return result;
-  }
+  const today = localDay(now(), point.timeZone);
+  if (today === null) return result;
   const radar = await getRadarRain(coords, opts);
   return { ...result, days: applyRadarToToday(result.days, radar, today) };
 }

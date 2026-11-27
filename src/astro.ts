@@ -3,6 +3,7 @@
  * and only for the venue's current local calendar day: another day's times are
  * never returned. `getMoon` is a pure calculation from a time, with no network.
  */
+import { localDay } from "./localDay.js";
 import { evictPoint, getPoint, type NwsPoint } from "./nws/point.js";
 import type { EngineOptions } from "./provenance.js";
 import type { Coords } from "./types.js";
@@ -41,20 +42,6 @@ const PHASE_NAMES: readonly MoonPhase["name"][] = [
   "Last quarter",
   "Waning crescent",
 ];
-
-/** The venue's local calendar date (YYYY-MM-DD) for an instant, or null if the zone is unusable. */
-function localDay(ms: number, timeZone: string): string | null {
-  try {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(ms));
-  } catch {
-    return null;
-  }
-}
 
 interface UsableSun {
   sun: NonNullable<NwsPoint["sun"]>;

@@ -3,6 +3,7 @@
  * and only for the venue's current local calendar day: another day's times are
  * never returned. `getMoon` is a pure calculation from a time, with no network.
  */
+import { localDay } from "./localDay.js";
 import { evictPoint, getPoint } from "./nws/point.js";
 const SYNODIC_MONTH_MS = 29.530588853 * 86_400_000;
 const REFERENCE_NEW_MOON = Date.UTC(2000, 0, 6, 18, 14);
@@ -16,20 +17,6 @@ const PHASE_NAMES = [
     "Last quarter",
     "Waning crescent",
 ];
-/** The venue's local calendar date (YYYY-MM-DD) for an instant, or null if the zone is unusable. */
-function localDay(ms, timeZone) {
-    try {
-        return new Intl.DateTimeFormat("en-CA", {
-            timeZone,
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-        }).format(new Date(ms));
-    }
-    catch {
-        return null;
-    }
-}
 /** The point's sun data when it has a zone, sunrise, sunset and a positive day length. */
 function usableSun(point) {
     if (!point || point.timeZone === null || point.sun === null)
