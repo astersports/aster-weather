@@ -19,12 +19,18 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 - **Never write "three independent weather sources"** about anything built on this package.
 - Describing an Aster product? Read `WHAT_IS_BUILT.md` first; this file governs this library only.
 
-## 2. Open-Meteo is CC-BY 4.0 — attribution is a licence condition
+## 2. Open-Meteo: the data is CC-BY 4.0, the free API is non-commercial
 
-- Every consumer that renders this package's data must show a visible, linked credit:
-  **"Weather data by Open-Meteo"** → https://open-meteo.com/. Removing it is a licensing regression.
+- **Two different terms; never merge them** (owner ruling, 2026-11-27). The *data* is CC-BY 4.0:
+  commercial use is allowed, with credit. The *free API* is for non-commercial use only, by
+  Open-Meteo's own terms (https://open-meteo.com/en/terms, read 2026-11-27).
+- **Never point a commercial project at this package's Open-Meteo fetchers** on the free API.
+  The replacement engine on US government sources is designed, not built:
+  [`docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`](docs/superpowers/specs/2026-11-27-one-weather-engine-design.md).
+- Every consumer that renders Open-Meteo data must show a visible, linked credit:
+  **"Weather data by Open-Meteo"** → https://open-meteo.com/. Removing it while that data is
+  rendered is a licensing regression.
 - This package is headless and cannot render the credit; say so in any consumer-facing doc.
-- **Never write that Open-Meteo's free tier is "non-commercial only"** — that claim was wrong and is withdrawn.
 
 ## 3. The engine contract — do not weaken any of these
 

@@ -1,6 +1,7 @@
 # The Aster weather service — design
 
-2026-11-27 · Status: **awaiting owner approval. Nothing is built.**
+2026-11-27 · Status: **approved by the owner, with the mock-up, on 2026-11-27. Build plans:
+`docs/superpowers/plans/`. Nothing in this design has shipped until its release is tagged.**
 
 Mock-up (real readings, one venue, both themes, every icon):
 https://claude.ai/artifact/RZnQHSqA3XWPxu3wyRxfub
@@ -156,7 +157,7 @@ keywords to a condition, tested against the keyword list recorded as a fixture.
   against both stops of its tint, at 3:1 or better. Shipped art is not recoloured.
 - Unchanged: no pixel sizes, `SkyPanel` required, reduced motion resolves to static, and
   server output carries no animation nodes.
-- The mock-up above is the rendering to match, once the owner approves it.
+- The mock-up above is the approved rendering to match.
 
 ### Page parts (`@aster/weather/ui`)
 
@@ -224,15 +225,16 @@ is the owner ruling that §2 requires.
 
 ## Open items
 
-1. **Owner: alert wording.** The mock-up shows an alert under its official name with the
-   National Weather Service named as issuer. The App ruling "leave out the wording and
-   credit" was made for forecasts; approving the mock-up settles this for alerts.
-2. **Radar from a browser.** Cross-origin access to NOAA's map service is unverified. If
+1. **Radar from a browser.** Cross-origin access to NOAA's map service is unverified. If
    it refuses, radar is server-only and the App gets none.
-3. **Unverified sources:** the radar loop picture, normal-for-the-date, and the
+2. **Unverified sources:** the radar loop picture, normal-for-the-date, and the
    severe-storm point lookup. Each is dropped if it cannot be verified in the build.
-4. **NWS rate limits** are undisclosed.
+3. **NWS rate limits** are undisclosed.
 
 ## Decided
 
 - **Who draws the screens** (owner, 2026-11-27): the package ships ready-made page parts.
+- **Alert wording** (owner, 2026-11-27): an alert shows under its official name, with the
+  National Weather Service named as its issuer. Forecast wording stays our own.
+- **The Open-Meteo licence statement** (owner, 2026-11-27): corrected in README and
+  CLAUDE.md §2.
