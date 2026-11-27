@@ -9,7 +9,11 @@ export type ReadingKind = "observed" | "forecast";
 /** What a station reading, a forecast or an event reading carries, so a consumer can label it. */
 export interface Stamp {
     kind: ReadingKind;
-    /** Epoch ms the reading is for (observation or forecast hour). */
+    /**
+     * Epoch ms. For a current reading: the observation time, or the start of the
+     * forecast hour. For an hourly or daily result, and the event reading built on
+     * one: the time NWS issued the forecast, or the time it was read when NWS gives none.
+     */
     at: number;
     /** Epoch ms the engine fetched it. */
     fetchedAt: number;
