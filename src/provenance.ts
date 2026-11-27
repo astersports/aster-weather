@@ -20,7 +20,7 @@ export interface Stamp {
    * comes from memory or from the last-good store. A reading inside its window is false.
    */
   stale: boolean;
-  source: "nws-station" | "nws-forecast" | "noaa-radar";
+  source: "nws-station" | "nws-forecast";
 }
 
 /** Longest a reading may be served at all, per kind of reading. */

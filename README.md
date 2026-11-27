@@ -93,7 +93,7 @@ Every engine reading carries a `Stamp`:
 | `at` | Epoch ms the reading is for: the observation time, or the start of the forecast hour. For hourly and daily forecasts, the time NWS issued the forecast. |
 | `fetchedAt` | Epoch ms the engine fetched it. |
 | `stale` | `true` whenever the reading is served past its freshness window, from memory or from the store. |
-| `source` | `nws-station` or `nws-forecast`. The type also lists `noaa-radar`, but no reading carries that value yet. |
+| `source` | `nws-station` or `nws-forecast`. |
 
 Label a reading by its `kind`:
 
@@ -220,9 +220,7 @@ always stale. Only an observed reading is written to the store.
 
 - **Sun (`getSun`).** `sunrise`, `sunset`, `firstLight` (civil twilight begins) and `lastLight`
   (civil twilight ends) come from the NWS point data, with `dayLengthMs`. Only the venue's current
-  local date is returned, never another day's times. When the cached point is from an earlier
-  day, the point is looked up again at most once per `SUN_REFRESH_AFTER_MS` (15 min) per
-  coordinate. Inside that window the answer is `null`, with no request.
+  local date is returned, never another day's times. `getSun` reads the cached point on every call, so data for today is used as soon as it is there. When the cached point is from another day, the point is looked up again at most once per `SUN_REFRESH_AFTER_MS` (15 min) per coordinate, and simultaneous callers share that one lookup. Inside that window, while the cached point is still from another day, the answer is `null` with no request.
 - **Moon (`getMoon`).** A pure calculation from a time, with no network. It counts from
   `REFERENCE_NEW_MOON` (2000-01-06 18:14 UTC) in steps of the mean synodic month,
   `SYNODIC_MONTH_MS`. `fraction` is the position in the cycle, `illumination` runs from 0 to 1,
@@ -404,7 +402,7 @@ Not planned:
 
 - **Radar from a browser** is unverified (section 9).
 - **NWS rate limits** are not disclosed, so the package cannot say how many requests a venue can
-  make.
+  make. The NWS disclaimer says it may block an address or a type of query that affects its service, so send a `userAgent` from a server and keep the caches in place.
 - **Clock steps back (B-017, open).** A cache entry stays fresh while `now - fetchedAt` is below its
   limit. If the clock steps back, an entry can be served as fresh for longer than its limit, by the
   size of the step. The backlog plans this as a `v0.8.x` patch.
@@ -415,12 +413,11 @@ Not planned:
 ## 18. Sources and terms
 
 - **NWS data.** The National Weather Service disclaimer says its information may be used without
-  charge for any lawful purpose, provided nothing implies NWS endorsement. This was read on
+  charge for any lawful purpose. The same three conditions apply as for all NWS information: do not claim it as your own, do not imply endorsement by or affiliation with NOAA or the NWS, and do not modify it and present it as official. This was read on
   2026-11-27 and is recorded in the design doc. Nothing in this package implies NWS endorsement.
 - **No credit line** is required by this package for NWS data. The NWS name appears only where an
   alert's issuer is shown.
-- **NOAA radar.** The radar answer comes from NOAA's map service. Its terms were not read for this
-  release. Check them before you rely on radar in a product.
+- **NOAA radar.** The radar answer comes from the National Weather Service's map service. Its own metadata names NOAA and the National Weather Service as the source, and the NWS disclaimer (https://www.weather.gov/disclaimer) says NOAA and NWS data presented through map services is in the public domain. Both were read on 2026-11-27. The same three conditions apply as for all NWS information: do not claim it as your own, do not imply endorsement by or affiliation with NOAA or the NWS, and do not modify it and present it as official.
 - **The hosts** are the two constants `NWS_API` (`https://api.weather.gov`) and `NOAA_MAPS`
   (`https://mapservices.weather.noaa.gov`) in `src/nws/http.ts`. Every request is refused before it
   is made unless its origin is one of them.

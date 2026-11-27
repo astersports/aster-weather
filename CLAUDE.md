@@ -11,23 +11,12 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 
 ## 1. Never claim what this package does not contain
 
-- **What it has (`v0.8.0`).** The NWS and NOAA engine: `getWeather` and its parts (`src/weather.ts`),
-  current readings (`src/now.ts`), hourly and seven-day forecasts (`src/nws/hourly.ts`,
-  `src/nws/daily.ts`), alerts (`src/nws/alerts.ts`), radar (`src/radar.ts`), sun and moon
-  (`src/astro.ts`), the event function (`src/event.ts`), the provenance stamp (`src/provenance.ts`)
-  and the last-good store interface (`src/store.ts`). Radar may only add rain.
-- **What it does NOT have.** Page parts (`v0.10.0`), icons for the newer conditions and measurement
-  glyphs (`v0.9.0`), UV index, outlooks and air quality (`v0.11.0`), notifications, and coverage
-  outside the US. Grep `src/` before claiming otherwise.
+- **It has (`v0.8.0`):** the NWS and NOAA engine (`getWeather` and its parts: now, hourly with the grid, seven-day, alerts, radar, sun and moon, event), the provenance `Stamp`, and the last-good store interface. Facts → [README](README.md).
+- **It does NOT have:** page parts (`v0.10.0`), icons for the newer conditions (`v0.9.0`), UV, outlooks and air quality (`v0.11.0`), notifications, or coverage outside the US. Grep `src/` first.
 - **Radar from a browser is unverified.** Never write that it works in a browser.
-- **No `readingKind`, no `cached` value.** A reading's kind is `Stamp.kind` (`observed` or
-  `forecast`); a reading served past its freshness window has `stale: true`.
-- What it also has is the in-process resilience chain in `src/cache.ts` —
-  [README](README.md#the-resilience-chain-srccachets). Describe that, and only that.
-- **Never write "three independent weather sources"** about anything built on this package.
-- **Never write "most accurate".** Say official, measured, and how old.
-- **Never show a forecast as a measurement.** A `forecast` stamp is a forecast.
-- **Never present edited NWS alert text as official.** Alert text is passed through unedited.
+- **Never write "three independent weather sources" or "most accurate".** Say official, measured,
+  and how old.
+- **Never show a forecast as a measurement** (`Stamp.kind`), **or edited NWS alert text as official.**
 - Describing an Aster product? Read `WHAT_IS_BUILT.md` first; this file governs this library only.
 
 ## 2. Open-Meteo: the data is CC-BY 4.0, the free API is non-commercial
@@ -35,10 +24,9 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 - **Two different terms; never merge them** (owner ruling, 2026-11-27). The *data* is CC-BY 4.0:
   commercial use is allowed, with credit. The *free API* is for non-commercial use only, by
   Open-Meteo's own terms (https://open-meteo.com/en/terms, read 2026-11-27).
-- **Never point a commercial project at this package's Open-Meteo fetchers** on the free API.
-  The replacement engine on US government sources is in this package since `v0.8.0` (`getWeather` and
-  its parts). Its design: [`docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`](docs/superpowers/specs/2026-11-27-one-weather-engine-design.md).
-  The Open-Meteo fetchers are deprecated and removed in `v1.0.0`, after all four consumers move.
+- **Never point a commercial project at this package's Open-Meteo fetchers** on the free API. The
+  engine on US government sources is in this package since `v0.8.0`; the Open-Meteo fetchers are
+  deprecated and removed in `v1.0.0`, after the consumers move.
 - Every consumer that renders Open-Meteo data must show a visible, linked credit:
   **"Weather data by Open-Meteo"** → https://open-meteo.com/. Removing it while that data is
   rendered is a licensing regression.
@@ -46,7 +34,7 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
 
 ## 3. The engine contract — do not weaken any of these
 
-1. **Measurements are `number | null`; a missing value is never fabricated as `0`.** `null` =
+1. **Measurements are `number | null`; a missing value is never fabricated as `0`, Open-Meteo and NWS alike.** `null` =
    unknown; warning flags do not fire on `null`; consumers render `—`, never `0`.
 2. **`weatherCode`, `icon` and `description` are `null` when no usable code was reported.** Never write
    `?? 0` for a code; a real `0` stays clear sky.
@@ -59,14 +47,13 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
    retry, immediately before the stale/empty fallback. Never once per attempt.
 6. **The engine never throws to callers.** Failure becomes stale-or-empty. Consumers do not wrap
    calls in try/catch; a change that lets a throw escape is a breaking change.
-7. **A missing NWS field is `null`, never `0`.**
-8. **Every engine reading carries its `Stamp`, and a reading past its maximum age is dropped, never
-   shown** (`MAX_AGE_MS`, `ALERT_MAX_STALE_MS`, and `MAX_FRAME_AGE_MS` for radar frames).
-9. **Radar may only add rain.** A radar that cannot answer changes nothing, and a frame older than
+7. **Every engine reading carries its `Stamp`; past its maximum age it is dropped, never shown**
+   (`MAX_AGE_MS`, `ALERT_MAX_STALE_MS`, `MAX_FRAME_AGE_MS`).
+8. **Radar may only add rain.** A radar that cannot answer changes nothing; a frame older than
    `MAX_FRAME_AGE_MS` never claims.
-10. **NWS alert text is never edited.**
-11. **The engine's hosts are the two constants in `src/nws/http.ts`.** A URL taken from an NWS
-    response is used only when it is under the NWS host.
+9. **NWS alert text is never edited.**
+10. **The engine's hosts are the two constants in `src/nws/http.ts`**; a URL from an NWS response is
+    used only under the NWS host.
 
 ## 4. Icon surface (`@aster/weather/icons`)
 
@@ -85,10 +72,8 @@ is whatever `package.json` on `origin/main` says — read it, never quote it fro
   the same commit. CI rebuilds and fails on any `dist/` drift.
 - **SemVer:** major = shape / icon-key / behaviour break · minor = additive · patch =
   behaviour-preserving fix. On 0.x a break ships as a minor — **call it "breaking" anyway**.
-- **`v0.7.0` was the nullable-`weatherCode` release.** The engine on US government sources takes
-  `v0.8.0` and later — `docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`.
-- **`v0.8.0` is the engine release, and it is additive.** Later versions (`v0.9.0` to `v1.0.0`) are
-  listed in the same design doc.
+- **`v0.7.0` was the nullable-`weatherCode` release; `v0.8.0` is the engine, and it is additive.**
+  Later versions: `docs/superpowers/specs/2026-11-27-one-weather-engine-design.md`.
 - **Tags are cut by `auto-tag.yml` on merge.** A patch tags automatically; a minor/major is **held**
   until the merge commit carries `[release-approved]` (or a deliberate `force` dispatch). That
   hold is the feature — never add the marker or dispatch `force` unless the owner asked for that release.
